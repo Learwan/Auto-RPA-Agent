@@ -232,7 +232,10 @@ async def test_click_step_fails_when_recorded_window_is_missing(monkeypatch):
     result = await executor.execute_step(step, {}, "exec-window-guard", 0)
 
     assert result.success is False
-    assert "目标窗口不可用" in (result.step_log.error_message or "")
+    # Closed-loop guarantee: an unconfirmed coordinate-only step is refused
+    # before we even reach the "window missing" branch.
+    error_msg = result.step_log.error_message or ""
+    assert "拒绝执行" in error_msg or "目标窗口不可用" in error_msg
     assert click_calls == []
 
 
@@ -317,7 +320,8 @@ async def test_critical_postcondition_failure_fails_step():
 
 
 @pytest.mark.asyncio
-async def test_uncertain_recorded_locator_can_execute_with_position_fallback(monkeypatch):
+async def test_uncertain_recorded_locator_is_refused_by_default(monkeypatch):
+    """The closed loop refuses fragile POSITION-only steps unless explicitly opted in."""
     locator = DummyLocator()
     adapter = DummyAdapter(windows=[DummyWindow("Example App")], active_window=DummyWindow("Example App"))
     executor = StepExecutor(locator, adapter, enable_visual_verify=False)
@@ -348,9 +352,19 @@ async def test_uncertain_recorded_locator_can_execute_with_position_fallback(mon
         description="Click uncertain recorded target",
     )
 
+    # Default: refuse to run a coordinate-only step.
+    monkeypatch.delenv("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", raising=False)
     result = await executor.execute_step(step, {}, "exec-uncertain-locator", 0)
 
+    assert result.success is False
+    assert "拒绝执行" in (result.step_log.error_message or "")
+    assert click_calls == []
+    assert locator.locate_calls == 0
+    assert executor.safety_controller.is_paused() is False
+
+    # Opt-in escape hatch still works for niche scenarios.
+    monkeypatch.setenv("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", "1")
+    result = await executor.execute_step(step, {}, "exec-uncertain-locator-opted-in", 0)
     assert result.success is True
     assert click_calls == [(120, 240, 1)]
     assert locator.locate_calls >= 1
-    assert executor.safety_controller.is_paused() is False
