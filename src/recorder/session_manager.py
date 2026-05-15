@@ -103,6 +103,26 @@ class SessionManager:
         for recorder in recorders:
             recorder.start(session_id, self._on_operation)
 
+        recorder_health = self._check_recorder_health(recorders)
+        if recorder_health["active_count"] == 0 and recorder_health["total_count"] > 0:
+            logger.warning(
+                "Recording session %s started but NO recorders are active. "
+                "No operations will be captured. Check display server, "
+                "system tools (wmctrl/xdotool/xclip), and environment variables.",
+                session_id,
+            )
+        elif recorder_health["inactive"]:
+            logger.info(
+                "Recording session %s: %d/%d recorders active. Inactive: %s",
+                session_id,
+                recorder_health["active_count"],
+                recorder_health["total_count"],
+                ", ".join(recorder_health["inactive"]),
+            )
+
+        session.metadata = session.metadata or {}
+        session.metadata["recorder_health"] = recorder_health
+
         factory = get_session_factory()
         async with factory() as db_session:
             repo = Repository(db_session)
@@ -353,29 +373,77 @@ class SessionManager:
 
         recorders: list[BaseRecorder] = []
         if settings.RECORD_ENABLE_MOUSE:
-            from src.recorder.mouse_recorder import MouseRecorder
+            try:
+                from src.recorder.mouse_recorder import MouseRecorder
 
-            recorders.append(MouseRecorder())
+                recorders.append(MouseRecorder())
+            except ImportError as e:
+                logger.warning(
+                    "MouseRecorder unavailable: %s. "
+                    "On Linux, ensure a display server (X11/Wayland) is running and DISPLAY is set. "
+                    "Set RECORD_ENABLE_MOUSE=false to suppress this warning.",
+                    e,
+                )
         if settings.RECORD_ENABLE_KEYBOARD:
-            from src.recorder.keyboard_recorder import KeyboardRecorder
+            try:
+                from src.recorder.keyboard_recorder import KeyboardRecorder
 
-            recorders.append(KeyboardRecorder())
+                recorders.append(KeyboardRecorder())
+            except ImportError as e:
+                logger.warning(
+                    "KeyboardRecorder unavailable: %s. "
+                    "On Linux, ensure a display server (X11/Wayland) is running and DISPLAY is set. "
+                    "Set RECORD_ENABLE_KEYBOARD=false to suppress this warning.",
+                    e,
+                )
         if settings.RECORD_ENABLE_WINDOW:
-            from src.recorder.window_recorder import WindowRecorder
+            try:
+                from src.recorder.window_recorder import WindowRecorder
 
-            window_interval = max(settings.RECORD_WINDOW_CHECK_INTERVAL_MS, 10) / 1000
-            recorders.append(WindowRecorder(poll_interval=window_interval))
+                window_interval = max(settings.RECORD_WINDOW_CHECK_INTERVAL_MS, 10) / 1000
+                recorders.append(WindowRecorder(poll_interval=window_interval))
+            except ImportError as e:
+                logger.warning("WindowRecorder unavailable: %s", e)
         if settings.RECORD_ENABLE_CLIPBOARD:
-            from src.recorder.clipboard_recorder import ClipboardRecorder
+            try:
+                from src.recorder.clipboard_recorder import ClipboardRecorder
 
-            clipboard_interval = max(settings.RECORD_CLIPBOARD_INTERVAL_MS, 10) / 1000
-            recorders.append(ClipboardRecorder(poll_interval=clipboard_interval))
+                clipboard_interval = max(settings.RECORD_CLIPBOARD_INTERVAL_MS, 10) / 1000
+                recorders.append(ClipboardRecorder(poll_interval=clipboard_interval))
+            except ImportError as e:
+                logger.warning("ClipboardRecorder unavailable: %s", e)
         if settings.RECORD_ENABLE_FILESYSTEM:
-            from src.recorder.filesystem_recorder import FilesystemRecorder
+            try:
+                from src.recorder.filesystem_recorder import FilesystemRecorder
 
-            watch_paths = settings.filesystem_watch_paths or None
-            recorders.append(FilesystemRecorder(watch_paths=watch_paths))
+                watch_paths = settings.filesystem_watch_paths or None
+                recorders.append(FilesystemRecorder(watch_paths=watch_paths))
+            except ImportError as e:
+                logger.warning("FilesystemRecorder unavailable: %s", e)
         return recorders
+
+    @staticmethod
+    def _check_recorder_health(recorders: list) -> dict[str, Any]:
+        active = []
+        inactive = []
+        for recorder in recorders:
+            name = type(recorder).__name__
+            healthy = getattr(recorder, "_listener_healthy", None)
+            if healthy is not None:
+                if healthy:
+                    active.append(name)
+                else:
+                    inactive.append(name)
+            elif getattr(recorder, "is_running", False):
+                active.append(name)
+            else:
+                inactive.append(name)
+        return {
+            "total_count": len(recorders),
+            "active_count": len(active),
+            "active": active,
+            "inactive": inactive,
+        }
 
     def _on_operation(self, event: OperationEvent) -> None:
         session_id = event.session_id

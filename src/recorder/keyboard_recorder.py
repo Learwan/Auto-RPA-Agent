@@ -1,4 +1,7 @@
 import asyncio
+import logging
+import os
+import platform
 import time
 from uuid import uuid4
 
@@ -14,6 +17,8 @@ from src.models.operation import (
 from src.platform.factory import create_platform_adapter
 from src.recorder.base import BaseRecorder
 from src.recorder.context_inference import enrich_operation_context
+
+logger = logging.getLogger(__name__)
 
 MODIFIER_KEYS = {
     "Key.ctrl",
@@ -33,6 +38,16 @@ SENSITIVE_PATTERNS = ["password", "passwd", "pwd", "secret", "token", "api_key",
 TEXT_FLUSH_GAP_MS = 1500
 
 
+def _check_display_available() -> bool:
+    system = platform.system().lower()
+    if system == "linux":
+        display = os.environ.get("DISPLAY")
+        wayland = os.environ.get("WAYLAND_DISPLAY")
+        if not display and not wayland:
+            return False
+    return True
+
+
 class KeyboardRecorder(BaseRecorder):
     def __init__(self):
         super().__init__()
@@ -47,6 +62,7 @@ class KeyboardRecorder(BaseRecorder):
         self._last_hotkey_combo: str = ""
         self._adapter = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._listener_healthy = False
 
     def start(self, session_id: str, callback) -> None:
         self._session_id = session_id
@@ -57,16 +73,34 @@ class KeyboardRecorder(BaseRecorder):
         self._text_buffer.clear()
         self._last_hotkey_time = 0.0
         self._last_hotkey_combo = ""
+        self._listener_healthy = False
         try:
             self._adapter = create_platform_adapter()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"KeyboardRecorder: failed to create platform adapter: {e}")
             self._adapter = None
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             self._loop = None
-        self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
-        self._listener.start()
+
+        if not _check_display_available():
+            logger.warning(
+                "KeyboardRecorder: no display server detected (DISPLAY and WAYLAND_DISPLAY are unset). "
+                "Keyboard events will NOT be captured. Set RECORD_ENABLE_KEYBOARD=false to suppress this warning, "
+                "or provide a display server (X11/Wayland) for desktop recording."
+            )
+            self._running = False
+            return
+
+        try:
+            self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+            self._listener.start()
+            self._listener_healthy = True
+        except Exception as e:
+            logger.warning(f"KeyboardRecorder: failed to start listener: {e}")
+            self._listener = None
+            self._running = False
 
     def stop(self) -> None:
         self._running = False
