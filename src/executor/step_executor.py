@@ -190,7 +190,7 @@ class StepExecutor:
             ):
                 if self._is_web_target(step.target) and self._adapter.get_platform_name() == "web":
                     pass
-                elif self._is_window_target(step.target, resolved_action):
+                elif step.type == StepType.SWITCH_WINDOW or self._is_window_target(step.target, resolved_action):
                     if await self._find_matching_window(step.target, resolved_action) is None:
                         recovered = await self.recover_window_context(
                             step,
@@ -781,7 +781,7 @@ class StepExecutor:
         if field in {"element_exists", "target_exists"}:
             if step.target is None:
                 return False
-            if self._is_window_target(step.target, action):
+            if step.type == StepType.SWITCH_WINDOW or self._is_window_target(step.target, action):
                 return await self._window_exists(step.target, action)
             located = await self._locator.wait_for_element(step.target, timeout_ms=timeout_ms)
             return located is not None
@@ -789,7 +789,7 @@ class StepExecutor:
         if field in {"element_missing", "target_missing", "element_gone"}:
             if step.target is None:
                 return True
-            if self._is_window_target(step.target, action):
+            if step.type == StepType.SWITCH_WINDOW or self._is_window_target(step.target, action):
                 return not await self._window_exists(step.target, action)
             located = await self._locator.wait_for_element(step.target, timeout_ms=timeout_ms)
             return located is None
