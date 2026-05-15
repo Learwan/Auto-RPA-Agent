@@ -39,6 +39,7 @@ class UIElement(BaseModel):
     is_focusable: bool = False
     is_focused: bool = False
     children: list[UIElement] | None = None
+    children_count: int = 0
 
     model_config = {"extra": "allow"}
 
@@ -55,6 +56,7 @@ class WindowInfo(BaseModel):
     browser_type: str | None = None
     tab_id: str | None = None
     window_class: str | None = None
+    layer: int = 0
 
     model_config = {"extra": "allow"}
 
@@ -64,20 +66,30 @@ class ProcessInfo(BaseModel):
     name: str = ""
     path: str = ""
     is_running: bool = True
+    cpu_percent: float = 0.0
+    memory_mb: float = 0.0
+    status: str = "unknown"
+    create_time: float = 0.0
 
     model_config = {"extra": "allow"}
 
 
 class ElementCriteria(BaseModel):
+    accessibility_id: str | None = None
     role: str | None = None
     title: str | None = None
+    text_contains: str | None = None
     identifier: str | None = None
     value: str | None = None
     label: str | None = None
     selector: str | None = None
+    xpath: str | None = None
+    url: str | None = None
+    frame: str | None = None
     class_name: str | None = None
     bounds: Rect | None = None
     position: Point | None = None
+    position_tolerance: int = 20
 
     model_config = {"extra": "allow"}
 
