@@ -47,7 +47,7 @@ class HotkeyConfig(BaseModel):
     model_config = {"extra": "allow"}
 
     def find_by_action(self, action: str) -> HotkeyBinding | None:
-        for field_name in self.model_fields:
+        for field_name in type(self).model_fields:
             binding = getattr(self, field_name, None)
             if isinstance(binding, HotkeyBinding) and binding.action == action:
                 return binding
