@@ -39,7 +39,7 @@ htmlcov/
 coverage.xml
 
 # Models (large binary files)
-models/
+/models/
 
 # IDE
 .idea/
