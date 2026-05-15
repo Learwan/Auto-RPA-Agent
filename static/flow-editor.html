@@ -16,29 +16,34 @@ if (typeof Babel === 'undefined') {
 <script crossorigin src="https://unpkg.com/reactflow@11/dist/umd/index.js"></script>
 <style>
 :root {
-  --bg-deep: #faf9f7;
-  --bg-panel: #f0efe9;
-  --bg-elevated: #ffffff;
-  --bg-input: #ffffff;
-  --border: #e8e7e3;
-  --border-active: #d4d3cf;
-  --text-dim: #9b9b9b;
-  --text-body: #6b6b6b;
-  --text-bright: #1a1a1a;
-  --text-white: #111111;
-  --accent-cyan: #0891b2;
-  --accent-green: #16a34a;
-  --accent-red: #dc2626;
-  --accent-amber: #d97706;
-  --accent-blue: #3b82f6;
-  --accent-purple: #7c3aed;
-  --accent-pink: #db2777;
-  --accent-teal: #0d9488;
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-lg: 12px;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --bg-deep: #1a1a1a;
+  --bg-panel: #232323;
+  --bg-elevated: #2a2a2a;
+  --bg-input: #333333;
+  --bg-node: #353535;
+  --bg-node-header: #404040;
+  --border: #3a3a3a;
+  --border-active: #555555;
+  --text-dim: #777777;
+  --text-body: #aaaaaa;
+  --text-bright: #dddddd;
+  --text-white: #eeeeee;
+  --accent-cyan: #4ecdc4;
+  --accent-green: #4cd88b;
+  --accent-red: #f04b5c;
+  --accent-amber: #f0b34b;
+  --accent-blue: #4b8bf0;
+  --accent-purple: #9b6bf0;
+  --accent-pink: #f06bca;
+  --accent-teal: #4ecdc4;
+  --noodle-default: #666666;
+  --noodle-active: #4ecdc4;
+  --port-size: 12px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -51,6 +56,7 @@ body {
   line-height: 1.5;
   height: 100vh;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root { height: 100vh; width: 100vw; }
@@ -155,30 +161,30 @@ body {
   white-space: nowrap;
 }
 
-.btn:hover { border-color: var(--border-active); background: #f5f4f1; }
+.btn:hover { border-color: var(--border-active); background: #383838; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary {
-  background: var(--accent-amber);
-  border-color: var(--accent-amber);
-  color: #ffffff;
+  background: var(--accent-teal);
+  border-color: var(--accent-teal);
+  color: #1a1a1a;
   font-weight: 600;
 }
-.btn-primary:hover { background: #c5660a; }
+.btn-primary:hover { background: #3dbdb5; }
 
 .btn-green {
   background: var(--accent-green);
   border-color: var(--accent-green);
-  color: #ffffff;
+  color: #1a1a1a;
   font-weight: 600;
 }
-.btn-green:hover { background: #15803d; }
+.btn-green:hover { background: #3cc77a; }
 
 .btn-red {
   border-color: var(--accent-red); color: var(--accent-red);
 }
-.btn-red:hover { background: rgba(240,75,92,0.12); }
+.btn-red:hover { background: rgba(240,75,92,0.15); }
 
 .btn-sm { padding: 3px 8px; font-size: 11px; }
 
@@ -272,8 +278,8 @@ body {
 }
 
 .library-node:hover {
-  background: var(--bg-elevated);
-  border-color: var(--border);
+  background: #333333;
+  border-color: var(--border-active);
   color: var(--text-bright);
 }
 
@@ -395,33 +401,70 @@ body {
 }
 
 .react-flow__node {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
 }
 
 .react-flow__attribution { display: none !important; }
+
+.react-flow__background {
+  background: var(--bg-deep) !important;
+}
 
 .react-flow__controls {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 
 .react-flow__controls-button {
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   fill: var(--text-bright);
-  width: 28px; height: 28px;
+  width: 30px; height: 30px;
 }
 
 .react-flow__controls-button:hover {
-  background: #f5f4f1;
+  background: #404040;
 }
 
 .react-flow__minimap {
-  background: var(--bg-panel);
+  background: var(--bg-panel) !important;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(78,205,196,0.08) !important;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2.5 !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent-teal) !important;
+  stroke-width: 3 !important;
+}
+
+.react-flow__handle {
+  width: var(--port-size) !important;
+  height: var(--port-size) !important;
+  border-radius: 50% !important;
+  border: 2.5px solid var(--bg-deep) !important;
+  transition: all 0.15s !important;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.3);
+  box-shadow: 0 0 8px rgba(78,205,196,0.5);
+}
+
+.react-flow__connection-line {
+  stroke: var(--accent-teal) !important;
+  stroke-width: 2.5 !important;
 }
 
 .edge-label {
@@ -446,9 +489,9 @@ body {
   max-width: 380px;
 }
 
-.toast-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
-.toast-error { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
-.toast-info { background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+.toast-success { background: #1a3328; border: 1px solid #2d6b47; color: #4cd88b; }
+.toast-error { background: #331a1d; border: 1px solid #6b2d33; color: #f04b5c; }
+.toast-info { background: #1a2633; border: 1px solid #2d4d6b; color: #4b8bf0; }
 
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(20px); }
@@ -466,9 +509,9 @@ body {
 
 .modal-overlay {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0,0,0,0.15);
+  background: rgba(0,0,0,0.55);
   display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
 }
 
 .modal {
@@ -478,7 +521,7 @@ body {
   padding: 24px;
   min-width: 400px;
   max-width: 600px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
   max-height: 80vh;
   overflow-y: auto;
 }
@@ -629,7 +672,7 @@ const IDLE_EXEC_STATUS = Object.freeze({
 
 const STEP_TYPE_META = {
   click: {
-    label: '点击', icon: '⊙', color: '#4b8bf0', bg: 'rgba(75,139,240,0.15)', category: '输入',
+    label: '点击', icon: '⊙', color: '#5b9bf0', bg: 'rgba(91,155,240,0.15)', category: '输入',
     description: '模拟鼠标点击操作，支持左键/右键单击和双击',
     params: {
       button: { type: 'enum', default: 'left', options: ['left', 'right', 'middle'], desc: '鼠标按键类型' },
@@ -863,10 +906,10 @@ function flowToReactFlow(flow) {
         source: step.id,
         target: branch.target_step_id,
         label: branch.outcome && branch.outcome !== 'default' ? branch.outcome : '',
-        type: 'smoothstep',
+        type: 'default',
         animated: false,
-        style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+        style: { stroke: '#666666', strokeWidth: 2.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#666666', width: 14, height: 14 },
         data: {
           outcome: branch.outcome || 'default',
           condition: branch.condition || null,
@@ -962,93 +1005,99 @@ function reactFlowToFlow(flowId, name, nodes, edges, existingFlow) {
 
 const WorkflowNode = React.memo(function WorkflowNode({ data, selected }) {
   const color = data.color || '#8b95a5';
-  const bgColor = data.bgColor || 'rgba(139,149,165,0.10)';
   const label = data.label || 'Step';
   const runtimeLabel = data.runtimeLabel || '';
-  const statusColors = {
-    idle: bgColor,
-    running: 'rgba(240,179,75,0.15)',
-    success: 'rgba(76,223,139,0.15)',
-    failed: 'rgba(240,75,92,0.12)',
-    skipped: 'rgba(139,149,165,0.06)',
+
+  const statusGlow = {
+    running: `0 0 0 2px rgba(240,179,75,0.25), 0 0 20px rgba(240,179,75,0.15)`,
+    success: `0 0 0 2px rgba(76,216,139,0.25), 0 0 20px rgba(76,216,139,0.1)`,
+    failed: `0 0 0 2px rgba(240,75,92,0.25), 0 0 20px rgba(240,75,92,0.15)`,
   };
-  const statusBorder = {
-    idle: selected ? color : 'transparent',
-    running: '#d97706',
-    success: '#16a34a',
-    failed: '#dc2626',
-    skipped: '#9b9b9b',
+  const statusHeaderBg = {
+    running: '#5a4520',
+    success: '#2a4a35',
+    failed: '#4a2028',
   };
+  const borderColor = data.status === 'running' ? '#f0b34b'
+    : data.status === 'success' ? '#4cd88b'
+    : data.status === 'failed' ? '#f04b5c'
+    : selected ? color : '#484848';
 
   return (
     <div style={{
-      background: '#ffffff',
-      border: `1.5px solid ${statusBorder[data.status] || (selected ? color : '#e8e7e3')}`,
-      borderRadius: '6px',
+      background: '#353535',
+      border: `2px solid ${borderColor}`,
+      borderRadius: '10px',
       padding: '0',
-      minWidth: '180px',
-      maxWidth: '280px',
-      boxShadow: data.status === 'running'
-        ? '0 0 0 2px rgba(217,119,6,0.12), 0 8px 24px rgba(217,119,6,0.16)'
-        : selected
-          ? `0 0 16px ${color}20`
-          : '0 1px 4px rgba(0,0,0,0.06)',
-      transition: 'all 0.15s',
+      minWidth: '200px',
+      maxWidth: '300px',
+      boxShadow: statusGlow[data.status] || (selected ? `0 0 16px ${color}30, 0 8px 24px rgba(0,0,0,0.3)` : '0 4px 16px rgba(0,0,0,0.25)'),
+      transition: 'all 0.2s ease',
+      overflow: 'hidden',
     }}>
       <Handle type="target" position={Position.Left}
-        style={{ background: '#d4d3cf', border: '2px solid #ffffff', width: 10, height: 10, left: -5 }} />
+        style={{ background: color, border: '3px solid #1a1a1a', width: 14, height: 14, left: -7, borderRadius: '50%' }} />
 
       <div style={{
-        background: statusColors[data.status] || bgColor,
-        padding: '6px 10px',
-        borderBottom: `1px solid ${color}15`,
-        display: 'flex', alignItems: 'center', gap: '6px',
-        borderTopLeftRadius: '4px', borderTopRightRadius: '4px',
+        background: statusHeaderBg[data.status] || '#404040',
+        padding: '8px 12px',
+        display: 'flex', alignItems: 'center', gap: '8px',
+        borderBottom: `2px solid ${color}40`,
       }}>
         <span style={{
-          width: '7px', height: '7px', borderRadius: '2px',
-          background: data.status === 'running' ? '#d97706' : data.status === 'success' ? '#16a34a' : data.status === 'failed' ? '#dc2626' : color,
+          width: '20px', height: '20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '13px',
+          background: color + '25',
+          borderRadius: '5px',
           flexShrink: 0,
-        }}></span>
+        }}>
+          {STEP_TYPE_META[data.stepType]?.icon || '◆'}
+        </span>
         <span style={{
-          fontSize: '11px', fontWeight: '600', color: '#1a1a1a',
+          fontSize: '12px', fontWeight: '600', color: '#e0e0e0',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          flex: 1,
+          flex: 1, letterSpacing: '0.3px',
         }}>
           {label}
         </span>
         {data.status === 'running' && (
           <span style={{
-            fontSize: '9px',
-            color: '#d97706',
-            animation: 'pulse 1s infinite',
-            fontWeight: '700',
-            padding: '1px 6px',
-            borderRadius: '999px',
-            background: 'rgba(217,119,6,0.12)',
+            fontSize: '9px', color: '#f0b34b', fontWeight: '700',
+            padding: '2px 8px', borderRadius: '999px',
+            background: 'rgba(240,179,75,0.2)',
+            animation: 'pulse 1.5s infinite',
           }}>
-            {runtimeLabel || '执行中'}
+            {runtimeLabel || '⟳ 执行中'}
           </span>
+        )}
+        {data.status === 'success' && (
+          <span style={{ fontSize: '11px', color: '#4cd88b' }}>✓</span>
+        )}
+        {data.status === 'failed' && (
+          <span style={{ fontSize: '11px', color: '#f04b5c' }}>✕</span>
         )}
       </div>
 
       <div style={{
-        padding: '5px 10px',
-        fontSize: '10px',
-        color: '#9b9b9b',
-        display: 'flex', alignItems: 'center', gap: '4px',
+        padding: '7px 12px',
+        fontSize: '11px',
+        color: '#888888',
+        display: 'flex', alignItems: 'center', gap: '6px',
+        background: '#353535',
       }}>
-        <span style={{ color: color + '80' }}>{STEP_TYPE_META[data.stepType]?.icon || '◆'}</span>
-        <span>{STEP_TYPE_META[data.stepType]?.label || data.stepType}</span>
+        <span style={{ color: color, fontSize: '10px', fontFamily: 'var(--font-mono)' }}>
+          {STEP_TYPE_META[data.stepType]?.label || data.stepType}
+        </span>
         {data.stepData?.delay > 0 && (
-          <span style={{ marginLeft: 'auto', fontFamily: 'monospace' }}>
+          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#666' }}>
             {data.stepData.delay}ms
           </span>
         )}
       </div>
 
       <Handle type="source" position={Position.Right}
-        style={{ background: color, border: '2px solid #ffffff', width: 10, height: 10, right: -5 }} />
+        style={{ background: color, border: '3px solid #1a1a1a', width: 14, height: 14, right: -7, borderRadius: '50%' }} />
     </div>
   );
 });
@@ -2372,8 +2421,8 @@ function App() {
     return edges.map(e => ({
       ...e,
       style: e.id === selectedEdgeId
-        ? { stroke: '#d97706', strokeWidth: 3 }
-        : { stroke: 'var(--border)', strokeWidth: 2 },
+        ? { stroke: '#4ecdc4', strokeWidth: 3.5 }
+        : { stroke: '#555555', strokeWidth: 2.5 },
     }));
   }, [edges, selectedEdgeId]);
 
@@ -2781,9 +2830,9 @@ function App() {
     pushHistory();
     setEdges(eds => addEdge({
       ...params,
-      type: 'smoothstep',
-      style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+      type: 'default',
+      style: { stroke: '#666666', strokeWidth: 2.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#666666', width: 14, height: 14 },
       data: { outcome: 'default' },
     }, eds));
   }, [setEdges]);
@@ -2915,9 +2964,9 @@ function App() {
   }, [isEditingName]);
 
   const defaultEdgeOptions = useMemo(() => ({
-    type: 'smoothstep',
-    style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+    type: 'default',
+    style: { stroke: '#666666', strokeWidth: 2.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#666666', width: 14, height: 14 },
   }), []);
 
   const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNode }), []);
@@ -3093,13 +3142,13 @@ function App() {
             snapToGrid={true}
             snapGrid={[20, 20]}
           >
-            <Background color="#e8e7e3" gap={20} size={1} />
+            <Background color="#333333" gap={25} size={1.5} variant="dots" />
             <Controls position="bottom-right" />
             <MiniMap
               position="bottom-left"
-              style={{ background: '#ffffff', border: '1px solid #e8e7e3' }}
-              nodeColor={(node) => node.data?.color || '#9b9b9b'}
-              maskColor="rgba(0,0,0,0.04)"
+              style={{ background: '#232323', border: '1px solid #3a3a3a' }}
+              nodeColor={(node) => node.data?.color || '#666666'}
+              maskColor="rgba(78,205,196,0.06)"
             />
           </FlowCanvas>
 
