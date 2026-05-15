@@ -12,6 +12,7 @@ This repository currently ships a FastAPI backend, Typer CLI, static web console
 - `docs/AUDIT_REPORT.md`: documentation consistency audit and revision summary
 - `docs/PRODUCT_DIRECTION_REEVALUATION.md`: refreshed product direction assessment
 - `docs/INTERNAL_INTERFACE_REVIEW.md`: internal feature invocation and interface review
+- `docs/CLOSED_LOOP_GUARANTEES.md`: end-to-end contract for the record → analyze → execute closed loop, including the anti-fragile (no naked coordinates) policy and the smoke harness at `scripts/closure_smoke.py`
 
 ## Current Product Scope
 
@@ -249,6 +250,28 @@ python -m pytest -q
 ```
 
 See `docs/BUILD_AND_TEST.md` for a fuller build and test workflow.
+
+## Closed-Loop Anti-Fragility Policy
+
+The recording → analysis → execution loop is enforced end-to-end:
+
+- `FlowClosureAssessor` rejects flows that depend on raw pixel coordinates,
+  miss window / page context, or skip pre/postchecks. Such flows cannot be
+  executed via `ExecutionService.start_execution` and the API responds with
+  HTTP 409 + a structured assessment payload.
+- `ElementLocator` no longer silently adds `POSITION` to the fallback chain
+  when the operator chose a stable strategy, and its self-healing chain
+  skips `POSITION` by default.
+- `StepExecutor` refuses to dispatch any step whose locator is still flagged
+  `requires_confirmation`, instead of silently degrading to the recorded
+  pixel.
+- The escape hatch is the env var `AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1`
+  for niche scenarios (e.g. drag inside an immutable canvas region).
+
+Run `python scripts/closure_smoke.py` for a fast proof that the loop is
+fully wired — it walks all five stages (recording capture → preprocess →
+flow generation → closure assessment → dry-run execution) and asserts the
+contract on both a fragile and a reinforced flow.
 
 ## Known Limitations
 
