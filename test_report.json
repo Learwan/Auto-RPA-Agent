@@ -1,0 +1,541 @@
+{
+  "summary": {
+    "total": 88,
+    "passed": 86,
+    "failed": 2,
+    "pass_rate": 97.72727272727273
+  },
+  "errors": [
+    {
+      "module": "认证授权",
+      "name": "创建用户",
+      "detail": "status=422, body={'detail': [{'type': 'missing', 'loc': ['query', 'username'], 'msg': 'Field required', 'input': None}]}"
+    },
+    {
+      "module": "22. 数据模型验证",
+      "name": "整体",
+      "detail": "1 validation error for BTNodeModel\nnode_id\n  Field required [type=missing, input_value={'id': 'n1', 'type': <BTN..., 'name': 'test-action'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+    }
+  ],
+  "performance": {
+    "health_basic": 0.0087,
+    "rt__health": 0.001,
+    "rt__sessions": 0.007,
+    "rt__settings": 0.0009,
+    "rt__automations": 0.0011,
+    "rt__executions": 0.0011,
+    "rt__llm_status": 0.0388,
+    "rt__agent_skills": 0.001,
+    "rt__vault_credentials": 0.0008,
+    "rt__scheduler_schedules": 0.0008,
+    "rt__marketplace_categories": 0.0008,
+    "rt__fusion_groups": 0.0007,
+    "rt__notifications_history": 0.0006,
+    "rt__auth_users": 0.0007,
+    "concurrent_1": {
+      "total": 0.0025583340029697865,
+      "avg": 0.0025583340029697865,
+      "all_ok": true
+    },
+    "concurrent_5": {
+      "total": 0.00235537500702776,
+      "avg": 0.00047107500140555205,
+      "all_ok": true
+    },
+    "concurrent_10": {
+      "total": 0.004312915989430621,
+      "avg": 0.0004312915989430621,
+      "all_ok": true
+    },
+    "concurrent_20": {
+      "total": 0.008311792014865205,
+      "avg": 0.0004155896007432602,
+      "all_ok": true
+    }
+  },
+  "details": {
+    "健康检查": [
+      {
+        "name": "健康检查-基本",
+        "status": "PASS",
+        "detail": "status=200, body={'status': 'ok', 'version': '0.1.0'}"
+      },
+      {
+        "name": "健康检查-响应时间<500ms",
+        "status": "PASS",
+        "detail": "elapsed=0.009s"
+      },
+      {
+        "name": "健康检查-详细",
+        "status": "PASS",
+        "detail": "status=200, body={'status': 'ok', 'version': '0.1.0', 'data_dir': 'data', 'llm_configured': True, 'local_llm_enabled': True, 'local_llm_engine': 'mlx', 'local_llm_model': 'models/qwen3.5-4b-4bit', 'vision_enabled': Tr"
+      }
+    ],
+    "会话管理": [
+      {
+        "name": "创建会话",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "创建会话-返回ID",
+        "status": "PASS",
+        "detail": "id=53e6aa5a38e540e2a1b969ffd7c2713f"
+      },
+      {
+        "name": "获取会话详情",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "列出会话",
+        "status": "PASS",
+        "detail": "status=200, count=1"
+      },
+      {
+        "name": "删除会话",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "获取不存在的会话-404",
+        "status": "PASS",
+        "detail": "status=404"
+      }
+    ],
+    "会话生命周期": [
+      {
+        "name": "启动录制",
+        "status": "PASS",
+        "detail": "status=200, body={'id': '2ed3e012d4194cecb174806d318c1b90', 'name': 'lifecycle-test', 'description': '', 'tags': [], 'status': 'recording', 'started_at': 1778153217.052929, 'stopped_at': None, 'duration_ms': 0, 'opera"
+      },
+      {
+        "name": "停止录制",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "清理测试会话",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "设置管理": [
+      {
+        "name": "获取设置",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "设置包含hotkeys",
+        "status": "PASS",
+        "detail": "keys=['hotkeys', 'audio_feedback_enabled', 'system_notifications_enabled']"
+      },
+      {
+        "name": "设置不含overlay",
+        "status": "PASS",
+        "detail": "has overlay=False"
+      },
+      {
+        "name": "获取快捷键配置",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "检查快捷键冲突",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "获取默认设置",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "重置设置",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "overlay端点已移除-404",
+        "status": "PASS",
+        "detail": "status=404"
+      }
+    ],
+    "自动化流": [
+      {
+        "name": "列出自动化流",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "创建自动化流",
+        "status": "PASS",
+        "detail": "status=422, body={'detail': [{'type': 'missing', 'loc': ['body', 'id'], 'msg': 'Field required', 'input': {'name': 'test-auto-flow', 'description': 'auto test flow', 'steps': []}}]}"
+      }
+    ],
+    "执行管理": [
+      {
+        "name": "列出执行记录",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "LLM服务": [
+      {
+        "name": "LLM状态",
+        "status": "PASS",
+        "detail": "status=200, body={'configured': True, 'model': 'minimaxai/minimax-m2.7', 'base_url': 'https://integrate.api.nvidia.com/v1', 'vision_available': True, 'vision_model': 'models/qwen3.5-4b-4bit'}"
+      }
+    ],
+    "AI代理": [
+      {
+        "name": "获取技能列表",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "获取工具列表",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "列出代理会话",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "视觉服务": [
+      {
+        "name": "视觉模型状态",
+        "status": "PASS",
+        "detail": "status=200, body={'enabled': True, 'configured': True, 'model': 'models/qwen3.5-4b-4bit', 'engine': 'mlx', 'grounding_threshold': 0.6, 'cache_enabled': True}"
+      }
+    ],
+    "认证授权": [
+      {
+        "name": "创建用户",
+        "status": "FAIL",
+        "detail": "status=422, body={'detail': [{'type': 'missing', 'loc': ['query', 'username'], 'msg': 'Field required', 'input': None}]}"
+      },
+      {
+        "name": "列出用户",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "查询审计日志",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "凭证库": [
+      {
+        "name": "列出凭证",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "存储凭证",
+        "status": "PASS",
+        "detail": "status=422, body={'detail': [{'type': 'missing', 'loc': ['query', 'name'], 'msg': 'Field required', 'input': None}, {'type': 'missing', 'loc': ['query', 'value'], 'msg': 'Field required', 'input': None}]}"
+      }
+    ],
+    "调度服务": [
+      {
+        "name": "列出调度",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "模板市场": [
+      {
+        "name": "搜索模板",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "列出分类",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "多录制融合": [
+      {
+        "name": "列出录制组",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "列出融合结果",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "通知服务": [
+      {
+        "name": "获取通知历史",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "协作服务": [
+      {
+        "name": "本地LLM状态",
+        "status": "PASS",
+        "detail": "status=200, body={'enabled': True, 'engine': 'mlx', 'running': True, 'model': 'models/qwen3.5-4b-4bit', 'model_loaded': True, 'gpu_name': 'Apple Silicon (MLX)', 'vram_used_mb': 2257.9, 'tokens_per_second': 0.0, 'conte"
+      },
+      {
+        "name": "列出协作室",
+        "status": "PASS",
+        "detail": "status=200"
+      }
+    ],
+    "桌面采集": [
+      {
+        "name": "获取窗口列表",
+        "status": "PASS",
+        "detail": "status=200, body=[{'window_id': 70, 'title': 'Item-0', 'app_name': '控制中心', 'pid': 752, 'bounds': {'x': 1885, 'y': 0, 'width': 44, 'height': 57}, 'is_active': True, 'is_visible': True, 'layer': 25, 'url': None, 'browse"
+      },
+      {
+        "name": "获取进程列表",
+        "status": "PASS",
+        "detail": "status=200, body=[{'pid': 0, 'name': 'kernel_task', 'cpu_percent': 0.0, 'memory_mb': 0.0, 'status': 'idle', 'create_time': 1777508035.002852}, {'pid': 1, 'name': 'launchd', 'cpu_percent': 0.0, 'memory_mb': 0.0, 'statu"
+      }
+    ],
+    "性能-响应时间": [
+      {
+        "name": "/health 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/sessions 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.007s, status=200"
+      },
+      {
+        "name": "/settings 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/automations 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/executions 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/llm/status 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.039s, status=200"
+      },
+      {
+        "name": "/agent/skills 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/vault/credentials 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/scheduler/schedules 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/marketplace/categories 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/fusion/groups 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/notifications/history 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      },
+      {
+        "name": "/auth/users 响应<2s",
+        "status": "PASS",
+        "detail": "elapsed=0.001s, status=200"
+      }
+    ],
+    "性能-并发": [
+      {
+        "name": "并发1请求",
+        "status": "PASS",
+        "detail": "total=0.003s, avg=0.003s"
+      },
+      {
+        "name": "并发5请求",
+        "status": "PASS",
+        "detail": "total=0.002s, avg=0.000s"
+      },
+      {
+        "name": "并发10请求",
+        "status": "PASS",
+        "detail": "total=0.004s, avg=0.000s"
+      },
+      {
+        "name": "并发20请求",
+        "status": "PASS",
+        "detail": "total=0.008s, avg=0.000s"
+      }
+    ],
+    "安全测试": [
+      {
+        "name": "路径遍历防护",
+        "status": "PASS",
+        "detail": "status=404"
+      },
+      {
+        "name": "XSS输入处理",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "XSS输出转义",
+        "status": "PASS",
+        "detail": "script_in_output=False"
+      },
+      {
+        "name": "SQL注入防护",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "超长输入处理",
+        "status": "PASS",
+        "detail": "status=422"
+      },
+      {
+        "name": "空请求体验证",
+        "status": "PASS",
+        "detail": "status=422"
+      },
+      {
+        "name": "类型错误输入",
+        "status": "PASS",
+        "detail": "status=422"
+      }
+    ],
+    "错误处理": [
+      {
+        "name": "无效UUID格式",
+        "status": "PASS",
+        "detail": "status=404"
+      },
+      {
+        "name": "不存在的会话启动",
+        "status": "PASS",
+        "detail": "status=400"
+      },
+      {
+        "name": "无效设置更新",
+        "status": "PASS",
+        "detail": "status=200"
+      },
+      {
+        "name": "删除不存在的自动化流",
+        "status": "PASS",
+        "detail": "status=404"
+      }
+    ],
+    "数据模型验证": [
+      {
+        "name": "Session模型创建",
+        "status": "PASS",
+        "detail": "id=test"
+      },
+      {
+        "name": "UserSettings默认值",
+        "status": "PASS",
+        "detail": "audio=True, has_overlay=False"
+      },
+      {
+        "name": "HotkeyConfig默认值",
+        "status": "PASS",
+        "detail": "bindings=3"
+      },
+      {
+        "name": "快捷键冲突检测-默认无冲突",
+        "status": "PASS",
+        "detail": "conflicts=[]"
+      },
+      {
+        "name": "UIElement模型创建",
+        "status": "PASS",
+        "detail": "role=button"
+      },
+      {
+        "name": "AutomationStep模型创建",
+        "status": "PASS",
+        "detail": "type=StepType.CLICK"
+      }
+    ],
+    "录制器模块": [
+      {
+        "name": "EventBus单例",
+        "status": "PASS",
+        "detail": "bus=EventBus"
+      },
+      {
+        "name": "AudioFeedback单例",
+        "status": "PASS",
+        "detail": "audio=AudioFeedback"
+      },
+      {
+        "name": "SystemNotifier单例",
+        "status": "PASS",
+        "detail": "notifier=SystemNotifier"
+      },
+      {
+        "name": "SessionManager无indicator属性",
+        "status": "PASS",
+        "detail": "has_indicator=False"
+      },
+      {
+        "name": "SessionManager无hud_processes属性",
+        "status": "PASS",
+        "detail": "has_hud=False"
+      }
+    ],
+    "配置验证": [
+      {
+        "name": "Settings创建",
+        "status": "PASS",
+        "detail": "type=Settings"
+      },
+      {
+        "name": "无RECORD_HUD_ENABLED",
+        "status": "PASS",
+        "detail": "has=False"
+      },
+      {
+        "name": "无RECORD_INDICATOR_ENABLED",
+        "status": "PASS",
+        "detail": "has=False"
+      },
+      {
+        "name": "有RECORD_HOTKEY_ENABLED",
+        "status": "PASS",
+        "detail": "has=True"
+      },
+      {
+        "name": "有RECORD_AUDIO_FEEDBACK_ENABLED",
+        "status": "PASS",
+        "detail": "has=True"
+      }
+    ]
+  }
+}

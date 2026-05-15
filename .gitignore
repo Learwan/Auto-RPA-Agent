@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data & Database
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+cache/
+*.cache
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Test reports
+test_reports/
+htmlcov/
+.coverage
+coverage.xml
+
+# Models (large binary files)
+models/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Tool configs
+.trae/
+
+# Node
+node_modules/

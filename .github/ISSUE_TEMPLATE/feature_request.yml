@@ -1,0 +1,34 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions you've considered
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Suggested Phase
+      description: Which iteration phase does this belong to?
+      options:
+        - Phase 0 (基础加固)
+        - Phase 1 (核心跃迁)
+        - Phase 2 (壁垒构建)
+        - Phase 3 (智能升级)
+        - Phase 4 (生态扩展)

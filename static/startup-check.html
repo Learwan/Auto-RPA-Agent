@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目启动检查中心</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        mono: ['"SF Mono"', '"Cascadia Code"', '"Fira Code"', 'Menlo', 'monospace']
+      }
+    }
+  }
+}
+</script>
+<style>
+:root {
+  --bg: #f8f6f1;
+  --paper: rgba(255, 255, 255, 0.78);
+  --paper-strong: rgba(255, 255, 255, 0.92);
+  --border: rgba(148, 163, 184, 0.18);
+  --text-main: #1f2937;
+  --text-soft: #64748b;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --warn: #d97706;
+  --danger: #dc2626;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at top left, rgba(45, 212, 191, 0.22), transparent 26%),
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.16), transparent 24%),
+    linear-gradient(180deg, #fbfaf6 0%, #f5f2ea 100%);
+}
+.glass {
+  background: var(--paper);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+.glass-strong {
+  background: var(--paper-strong);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.1);
+}
+.grid-pattern {
+  position: relative;
+}
+.grid-pattern::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(180deg, rgba(255,255,255,0.6), transparent 100%);
+  pointer-events: none;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.status-enabled { background: rgba(16, 185, 129, 0.12); color: #047857; }
+.status-action_required { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+.status-warning { background: rgba(245, 158, 11, 0.14); color: #b45309; }
+.status-optional_off { background: rgba(100, 116, 139, 0.12); color: #475569; }
+.status-disabled { background: rgba(148, 163, 184, 0.14); color: #475569; }
+.summary-card {
+  min-height: 132px;
+  border-radius: 24px;
+  padding: 22px;
+  position: relative;
+  overflow: hidden;
+}
+.summary-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -30px -30px auto;
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.check-card {
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.check-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+.form-input, .form-select {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.84);
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.form-input:focus, .form-select:focus {
+  border-color: rgba(15, 118, 110, 0.5);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.08);
+}
+.btn-primary, .btn-secondary {
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #14b8a6, #0f766e);
+  color: white;
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.24);
+}
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text-main);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.btn-primary:hover, .btn-secondary:hover { transform: translateY(-1px); }
+.toast {
+  border-radius: 18px;
+  padding: 14px 16px;
+  min-width: 240px;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+.toast-info { background: linear-gradient(135deg, #0f766e, #14b8a6); }
+.toast-error { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+.toast-warn { background: linear-gradient(135deg, #b45309, #f59e0b); }
+@media (max-width: 1024px) {
+  .layout-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body class="font-sans">
+  <div class="min-h-screen px-4 py-6 md:px-6 lg:px-8">
+    <div class="mx-auto max-w-7xl space-y-6">
+      <section class="glass-strong grid-pattern relative overflow-hidden rounded-[32px] px-6 py-6 md:px-8 md:py-8">
+        <div class="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-3xl space-y-4">
+            <div class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">
+              <i data-lucide="clipboard-check" class="h-3.5 w-3.5"></i>
+              Startup Check Center
+            </div>
+            <div>
+              <h1 class="text-3xl font-black tracking-tight text-slate-800 md:text-4xl">项目启动检查与 LLM 配置中心</h1>
+              <p class="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
+                启动后快速确认录制、AI、视觉、协作能力是否真正开启，并在同一页配置兼容 OpenAI 的远端 LLM。
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
+              <div class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2">
+                <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                <span id="checked-at">等待检查...</span>
+              </div>
+              <div class="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2">
+                <i data-lucide="database" class="h-3.5 w-3.5 text-teal-700"></i>
+                <span id="llm-source-chip">LLM 来源: 检测中</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            <button class="btn-secondary" onclick="window.location.href='/'">返回主控制台</button>
+            <button class="btn-primary" onclick="loadDashboard(true)">刷新启动检查</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="summary-grid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="summary-card glass"></div>
+        <div class="summary-card glass"></div>
+        <div class="summary-card glass"></div>
+        <div class="summary-card glass"></div>
+      </section>
+
+      <section class="layout-grid grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+        <div class="space-y-6" id="sections-container"></div>
+
+        <div class="space-y-6">
+          <div class="glass rounded-[28px] p-6">
+            <div class="flex items-center gap-2">
+              <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-700">
+                <i data-lucide="cpu" class="h-5 w-5"></i>
+              </div>
+              <div>
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Effective Runtime</p>
+                <h2 class="text-lg font-black text-slate-800">当前生效配置</h2>
+              </div>
+            </div>
+            <div class="mt-5 space-y-3 text-sm font-semibold text-slate-600" id="runtime-overview"></div>
+          </div>
+
+          <div class="glass rounded-[28px] p-6">
+            <div class="flex items-center gap-2">
+              <div class="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/12 text-amber-700">
+                <i data-lucide="list-checks" class="h-5 w-5"></i>
+              </div>
+              <div>
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Action Queue</p>
+                <h2 class="text-lg font-black text-slate-800">建议处理项</h2>
+              </div>
+            </div>
+            <div class="mt-5 space-y-3" id="action-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass-strong rounded-[32px] p-6 md:p-8">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="max-w-2xl">
+            <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">OpenAI Compatible LLM</p>
+            <h2 class="mt-2 text-2xl font-black text-slate-800">兼容 OpenAI 的远端 LLM 配置</h2>
+            <p class="mt-3 text-sm font-semibold leading-6 text-slate-500">
+              这里保存的是项目级用户配置。开启后会覆盖当前运行时的远端 LLM Base URL、API Key、模型名称及采样参数。
+            </p>
+          </div>
+          <div class="rounded-2xl bg-teal-500/10 px-4 py-3 text-xs font-bold text-teal-700">
+            保存后新创建的 LLMService 将直接读取这份配置。
+          </div>
+        </div>
+
+        <div class="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <form id="remote-llm-form" class="space-y-5" onsubmit="event.preventDefault(); saveRemoteLLMConfig();">
+            <label class="flex items-center justify-between rounded-[24px] border border-teal-500/15 bg-teal-500/6 px-5 py-4">
+              <div>
+                <p class="text-sm font-black text-slate-800">启用兼容 OpenAI 的远端 LLM</p>
+                <p class="mt-1 text-xs font-semibold text-slate-500">开启后，运行时将优先使用此处保存的远端模型配置。</p>
+              </div>
+              <input id="remote-llm-enabled" type="checkbox" class="h-5 w-5 rounded accent-teal-600">
+            </label>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Base URL</label>
+                <input id="remote-llm-base-url" class="form-input" placeholder="https://api.openai.com/v1">
+              </div>
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">API Key</label>
+                <input id="remote-llm-api-key" type="password" class="form-input" placeholder="sk-...">
+              </div>
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Model Name</label>
+                <input id="remote-llm-model" class="form-input" placeholder="gpt-4o-mini / qwen-plus / custom-model">
+              </div>
+              <div>
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Temperature</label>
+                <input id="remote-llm-temperature" type="number" step="0.1" min="0" max="2" class="form-input">
+              </div>
+              <div>
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Top P</label>
+                <input id="remote-llm-top-p" type="number" step="0.05" min="0" max="1" class="form-input">
+              </div>
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Max Tokens</label>
+                <input id="remote-llm-max-tokens" type="number" min="1" step="1" class="form-input">
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button type="submit" class="btn-primary">保存兼容 LLM 配置</button>
+              <button type="button" class="btn-secondary" onclick="loadDashboard(true)">重新读取当前配置</button>
+            </div>
+          </form>
+
+          <div class="space-y-4">
+            <div class="rounded-[24px] border border-slate-200/70 bg-white/72 p-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Compatibility Notes</p>
+              <div class="mt-4 space-y-3 text-sm font-semibold leading-6 text-slate-600">
+                <p>支持任何 OpenAI-compatible Chat Completions 服务，只要提供兼容的 Base URL、API Key 和模型名称。</p>
+                <p>若你同时开启了远端 LLM 与本地模型，远端文本 LLM 会优先使用这里的配置；本地视觉仍按本地视觉开关独立判断。</p>
+                <p>保存后无需改 `.env` 文件，但正在持有旧 client 的长生命周期对象可能要在下次请求时才会切换到新配置。</p>
+              </div>
+            </div>
+            <div class="rounded-[24px] border border-slate-200/70 bg-white/72 p-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Current Remote Snapshot</p>
+              <div class="mt-4 space-y-3 text-sm font-semibold text-slate-600" id="remote-llm-snapshot"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="toast-container" class="fixed right-4 top-4 z-50 space-y-2"></div>
+
+<script>
+const API = window.location.origin + '/api';
+
+const statusMeta = {
+  enabled: { label: '已开启', className: 'status-enabled', icon: 'badge-check' },
+  action_required: { label: '需开启', className: 'status-action_required', icon: 'alert-circle' },
+  warning: { label: '需确认', className: 'status-warning', icon: 'triangle-alert' },
+  optional_off: { label: '可选关闭', className: 'status-optional_off', icon: 'toggle-left' },
+  disabled: { label: '已关闭', className: 'status-disabled', icon: 'circle-off' }
+};
+
+const checkIcons = {
+  remote_llm: 'plug-zap',
+  local_llm: 'cpu',
+  vision: 'scan-eye',
+  local_vlm_dependency: 'image',
+  window_recorder: 'monitor',
+  mouse_recorder: 'mouse-pointer-click',
+  keyboard_recorder: 'keyboard',
+  hotkeys: 'command',
+  audio_feedback: 'volume-2',
+  system_notifications: 'bell-ring',
+  collab: 'users',
+  grounding_engine: 'crosshair',
+  data_dir: 'folder-open'
+};
+
+function escapeHTML(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+    } catch (_) {}
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
+
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.getElementById('toast-container').appendChild(toast);
+  setTimeout(() => toast.remove(), 2800);
+}
+
+function renderSummary(summary) {
+  const cards = [
+    {
+      title: '已开启能力',
+      value: summary.enabled,
+      hint: `共 ${summary.total} 项检查`,
+      style: 'background:linear-gradient(135deg, rgba(16,185,129,0.18), rgba(255,255,255,0.78));'
+    },
+    {
+      title: '需要开启',
+      value: summary.action_required,
+      hint: '建议优先处理',
+      style: 'background:linear-gradient(135deg, rgba(239,68,68,0.16), rgba(255,255,255,0.82));'
+    },
+    {
+      title: '需要确认',
+      value: summary.warning,
+      hint: '依赖或配置需复核',
+      style: 'background:linear-gradient(135deg, rgba(245,158,11,0.16), rgba(255,255,255,0.82));'
+    },
+    {
+      title: '可选关闭',
+      value: summary.optional_off,
+      hint: '非阻塞能力',
+      style: 'background:linear-gradient(135deg, rgba(100,116,139,0.12), rgba(255,255,255,0.82));'
+    }
+  ];
+
+  document.getElementById('summary-grid').innerHTML = cards.map(card => `
+    <div class="summary-card glass" style="${card.style}">
+      <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">${card.title}</p>
+      <p class="mt-4 text-4xl font-black text-slate-800">${card.value}</p>
+      <p class="mt-3 text-sm font-semibold text-slate-500">${card.hint}</p>
+    </div>
+  `).join('');
+}
+
+function renderSections(sections) {
+  document.getElementById('sections-container').innerHTML = sections.map(section => `
+    <section class="glass rounded-[28px] p-6">
+      <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">${escapeHTML(section.id)}</p>
+          <h2 class="mt-1 text-xl font-black text-slate-800">${escapeHTML(section.title)}</h2>
+          <p class="mt-2 text-sm font-semibold text-slate-500">${escapeHTML(section.description || '')}</p>
+        </div>
+        <div class="rounded-full bg-white/70 px-3 py-2 text-[11px] font-bold text-slate-500">
+          ${section.checks.length} 项检查
+        </div>
+      </div>
+      <div class="mt-5 grid gap-4 md:grid-cols-2">
+        ${section.checks.map(renderCheckCard).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function renderCheckCard(check) {
+  const meta = statusMeta[check.status] || statusMeta.disabled;
+  const icon = checkIcons[check.id] || 'circle';
+  return `
+    <article class="check-card">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex min-w-0 items-start gap-3">
+          <div class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-700">
+            <i data-lucide="${icon}" class="h-4.5 w-4.5"></i>
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-base font-black text-slate-800">${escapeHTML(check.label)}</h3>
+            <p class="mt-2 text-sm font-semibold leading-6 text-slate-500">${escapeHTML(check.detail || '')}</p>
+          </div>
+        </div>
+        <span class="status-pill ${meta.className}"><i data-lucide="${meta.icon}" class="h-3.5 w-3.5"></i>${meta.label}</span>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="rounded-full bg-slate-900/6 px-3 py-1 text-[11px] font-bold text-slate-600">当前值: ${escapeHTML(check.value || '-')}</span>
+      </div>
+      ${check.action ? `<div class="mt-4 rounded-2xl bg-white/72 px-4 py-3 text-sm font-semibold text-slate-600"><span class="font-black text-slate-800">建议操作：</span>${escapeHTML(check.action)}</div>` : ''}
+    </article>
+  `;
+}
+
+function renderRuntimeOverview(effectiveLLM) {
+  const remote = effectiveLLM.remote || {};
+  const local = effectiveLLM.local || {};
+  const vision = effectiveLLM.vision || {};
+  document.getElementById('runtime-overview').innerHTML = `
+    <div class="rounded-2xl bg-white/70 px-4 py-3">
+      <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">远端 LLM 来源</div>
+      <div class="mt-2 text-sm font-black text-slate-800">${effectiveLLM.source === 'settings' ? '用户配置覆盖' : '环境变量'}</div>
+    </div>
+    <div class="rounded-2xl bg-white/70 px-4 py-3">
+      <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">远端模型</div>
+      <div class="mt-2 text-sm font-black text-slate-800">${escapeHTML(remote.model || '未配置')}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">${escapeHTML(remote.base_url || '未配置 Base URL')}</div>
+    </div>
+    <div class="rounded-2xl bg-white/70 px-4 py-3">
+      <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">本地 LLM</div>
+      <div class="mt-2 text-sm font-black text-slate-800">${local.enabled ? '已开启' : '未开启'}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">${escapeHTML(local.engine || '-')} · ${escapeHTML(local.model || '-')}</div>
+    </div>
+    <div class="rounded-2xl bg-white/70 px-4 py-3">
+      <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">本地视觉</div>
+      <div class="mt-2 text-sm font-black text-slate-800">${vision.enabled ? '已开启' : '已关闭'}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">依赖状态：${vision.dependency_ok ? 'mlx_vlm 可用' : 'mlx_vlm 需确认'}</div>
+    </div>
+  `;
+}
+
+function renderActionList(sections) {
+  const actions = sections
+    .flatMap(section => section.checks || [])
+    .filter(check => check.action && ['action_required', 'warning', 'optional_off'].includes(check.status));
+
+  const container = document.getElementById('action-list');
+  if (!actions.length) {
+    container.innerHTML = '<div class="rounded-[22px] bg-white/72 px-4 py-4 text-sm font-semibold text-slate-500">当前没有需要处理的启动项，项目能力基本已就绪。</div>';
+    return;
+  }
+
+  container.innerHTML = actions.map((check, index) => `
+    <div class="rounded-[22px] border border-slate-200/70 bg-white/72 px-4 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-900/5 text-slate-700 text-xs font-black">${index + 1}</div>
+        <div>
+          <p class="text-sm font-black text-slate-800">${escapeHTML(check.label)}</p>
+          <p class="mt-1 text-xs font-semibold text-slate-500">${escapeHTML(check.value || '')}</p>
+        </div>
+      </div>
+      <p class="mt-3 text-sm font-semibold leading-6 text-slate-600">${escapeHTML(check.action)}</p>
+    </div>
+  `).join('');
+}
+
+function fillRemoteLLMForm(settings, startupCheck) {
+  const config = (settings && settings.remote_llm) || {};
+  document.getElementById('remote-llm-enabled').checked = Boolean(config.enabled);
+  document.getElementById('remote-llm-base-url').value = config.base_url || '';
+  document.getElementById('remote-llm-api-key').value = config.api_key || '';
+  document.getElementById('remote-llm-model').value = config.model || '';
+  document.getElementById('remote-llm-temperature').value = config.temperature ?? 1.0;
+  document.getElementById('remote-llm-top-p').value = config.top_p ?? 0.95;
+  document.getElementById('remote-llm-max-tokens').value = config.max_tokens ?? 16384;
+
+  const effective = startupCheck.effective_llm || {};
+  const remote = effective.remote || {};
+  document.getElementById('remote-llm-snapshot').innerHTML = `
+    <div class="flex items-center justify-between gap-3"><span class="text-slate-400">来源</span><span class="font-mono text-[12px] text-slate-700">${escapeHTML(effective.source || '-')}</span></div>
+    <div class="flex items-center justify-between gap-3"><span class="text-slate-400">Base URL</span><span class="font-mono text-[12px] text-slate-700">${escapeHTML(remote.base_url || '未配置')}</span></div>
+    <div class="flex items-center justify-between gap-3"><span class="text-slate-400">API Key</span><span class="font-mono text-[12px] text-slate-700">${escapeHTML(remote.api_key_masked || '未配置')}</span></div>
+    <div class="flex items-center justify-between gap-3"><span class="text-slate-400">模型</span><span class="font-mono text-[12px] text-slate-700">${escapeHTML(remote.model || '未配置')}</span></div>
+    <div class="flex items-center justify-between gap-3"><span class="text-slate-400">状态</span><span class="font-mono text-[12px] text-slate-700">${remote.configured ? '已配置' : '未配置完整'}</span></div>
+  `;
+}
+
+async function saveRemoteLLMConfig() {
+  const updates = {
+    remote_llm: {
+      enabled: document.getElementById('remote-llm-enabled').checked,
+      base_url: document.getElementById('remote-llm-base-url').value.trim(),
+      api_key: document.getElementById('remote-llm-api-key').value.trim(),
+      model: document.getElementById('remote-llm-model').value.trim(),
+      temperature: Number(document.getElementById('remote-llm-temperature').value || 1.0),
+      top_p: Number(document.getElementById('remote-llm-top-p').value || 0.95),
+      max_tokens: Number(document.getElementById('remote-llm-max-tokens').value || 16384),
+    }
+  };
+
+  try {
+    await api('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ updates }),
+    });
+    showToast('兼容 OpenAI 的 LLM 配置已保存', 'info');
+    await loadDashboard(true);
+  } catch (error) {
+    showToast(`保存失败：${error.message}`, 'error');
+  }
+}
+
+async function loadDashboard(showSuccessToast = false) {
+  try {
+    const [startupCheck, settings] = await Promise.all([
+      api('/health/startup-check'),
+      api('/settings'),
+    ]);
+
+    document.getElementById('checked-at').textContent = `最近检查：${new Date(startupCheck.checked_at).toLocaleString('zh-CN')}`;
+    document.getElementById('llm-source-chip').textContent = `LLM 来源: ${startupCheck.effective_llm.source === 'settings' ? '用户配置覆盖' : '环境变量'}`;
+
+    renderSummary(startupCheck.summary);
+    renderSections(startupCheck.sections || []);
+    renderRuntimeOverview(startupCheck.effective_llm || {});
+    renderActionList(startupCheck.sections || []);
+    fillRemoteLLMForm(settings, startupCheck);
+    lucide.createIcons();
+
+    if (showSuccessToast) {
+      showToast('启动检查已刷新', 'info');
+    }
+  } catch (error) {
+    showToast(`加载失败：${error.message}`, 'error');
+  }
+}
+
+loadDashboard(false);
+</script>
+</body>
+</html>

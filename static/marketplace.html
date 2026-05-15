@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Marketplace</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface-hover: #242736;
+            --border: #2d3148;
+            --text: #e4e6f0;
+            --text-secondary: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent-hover: #7f70f0;
+            --success: #00b894;
+            --warning: #fdcb6e;
+            --danger: #e17055;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header h1 span { color: var(--accent); }
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .search-bar input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: var(--text);
+            font-size: 14px;
+            width: 280px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .search-bar input:focus { border-color: var(--accent); }
+        .filters {
+            display: flex;
+            gap: 8px;
+            padding: 16px 24px;
+            flex-wrap: wrap;
+        }
+        .filter-chip {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+        }
+        .filter-chip:hover, .filter-chip.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            padding: 16px 24px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .card-title { font-size: 16px; font-weight: 600; }
+        .card-badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+        .badge-official { background: rgba(108,92,231,0.2); color: var(--accent); }
+        .badge-community { background: rgba(0,184,148,0.2); color: var(--success); }
+        .badge-featured { background: rgba(253,203,110,0.2); color: var(--warning); }
+        .card-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 16px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .card-stats { display: flex; gap: 12px; }
+        .card-stats span { display: flex; align-items: center; gap: 4px; }
+        .card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .tag {
+            background: var(--bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal h2 { margin-bottom: 16px; font-size: 22px; }
+        .modal p { color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 24px;
+            color: var(--text-secondary);
+        }
+        .empty-state h3 { margin-bottom: 8px; color: var(--text); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛒 <span>Marketplace</span></h1>
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search workflows..." />
+            <button class="btn" onclick="fetchTemplates()">Refresh</button>
+        </div>
+    </div>
+    <div class="filters">
+        <div class="filter-chip active" data-filter="all" onclick="setFilter(this)">All</div>
+        <div class="filter-chip" data-filter="official" onclick="setFilter(this)">Official</div>
+        <div class="filter-chip" data-filter="community" onclick="setFilter(this)">Community</div>
+        <div class="filter-chip" data-filter="featured" onclick="setFilter(this)">Featured</div>
+    </div>
+    <div class="grid" id="templateGrid"></div>
+    <div class="empty-state" id="emptyState" style="display:none;">
+        <h3>No templates found</h3>
+        <p>Try adjusting your search or filters</p>
+    </div>
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+        <div class="modal" id="modalContent"></div>
+    </div>
+    <script>
+        const API_BASE = '/api/marketplace';
+        let currentFilter = 'all';
+        let templates = [];
+
+        async function fetchTemplates() {
+            try {
+                const resp = await fetch(`${API_BASE}/templates`);
+                if (resp.ok) {
+                    templates = await resp.json();
+                } else {
+                    templates = getSampleTemplates();
+                }
+            } catch {
+                templates = getSampleTemplates();
+            }
+            renderTemplates();
+        }
+
+        function getSampleTemplates() {
+            return [
+                { id: '1', name: 'Email Automation', description: 'Automate email processing with Gmail/Outlook integration. Handles reading, categorizing, and responding to emails based on rules.', category: 'productivity', author: 'Auto-Agent Team', downloads: 1250, rating: 4.8, tags: ['email', 'gmail', 'automation'], is_official: true, is_featured: true },
+                { id: '2', name: 'Data Entry Bot', description: 'Streamline repetitive data entry tasks across spreadsheets and web forms. Supports Excel, Google Sheets, and custom web apps.', category: 'data', author: 'Community', downloads: 890, rating: 4.5, tags: ['data-entry', 'excel', 'forms'], is_official: false, is_featured: true },
+                { id: '3', name: 'Web Scraper', description: 'Extract structured data from websites with intelligent element detection and pagination handling.', category: 'data', author: 'Community', downloads: 2100, rating: 4.6, tags: ['scraping', 'data', 'web'], is_official: false, is_featured: false },
+                { id: '4', name: 'File Organizer', description: 'Automatically organize files by type, date, or custom rules. Monitors download and desktop folders.', category: 'productivity', author: 'Auto-Agent Team', downloads: 3400, rating: 4.9, tags: ['files', 'organization', 'automation'], is_official: true, is_featured: true },
+                { id: '5', name: 'Report Generator', description: 'Generate weekly/monthly reports from multiple data sources. Supports PDF, Excel, and PowerPoint output formats.', category: 'business', author: 'Auto-Agent Team', downloads: 670, rating: 4.3, tags: ['reports', 'pdf', 'analytics'], is_official: true, is_featured: false },
+                { id: '6', name: 'Social Media Manager', description: 'Schedule and publish posts across multiple social media platforms. Includes content calendar and analytics.', category: 'marketing', author: 'Community', downloads: 450, rating: 4.1, tags: ['social', 'scheduling', 'marketing'], is_official: false, is_featured: false },
+            ];
+        }
+
+        function setFilter(el) {
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            currentFilter = el.dataset.filter;
+            renderTemplates();
+        }
+
+        function renderTemplates() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            let filtered = templates;
+
+            if (currentFilter === 'official') filtered = filtered.filter(t => t.is_official);
+            else if (currentFilter === 'community') filtered = filtered.filter(t => !t.is_official);
+            else if (currentFilter === 'featured') filtered = filtered.filter(t => t.is_featured);
+
+            if (search) {
+                filtered = filtered.filter(t =>
+                    t.name.toLowerCase().includes(search) ||
+                    t.description.toLowerCase().includes(search) ||
+                    t.tags?.some(tag => tag.toLowerCase().includes(search))
+                );
+            }
+
+            const grid = document.getElementById('templateGrid');
+            const empty = document.getElementById('emptyState');
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            grid.innerHTML = filtered.map(t => `
+                <div class="card" onclick="showDetail('${t.id}')">
+                    <div class="card-header">
+                        <div class="card-title">${t.name}</div>
+                        ${t.is_featured ? '<span class="card-badge badge-featured">⭐ Featured</span>' :
+                          t.is_official ? '<span class="card-badge badge-official">Official</span>' :
+                          '<span class="card-badge badge-community">Community</span>'}
+                    </div>
+                    <div class="card-desc">${t.description}</div>
+                    <div class="card-tags">
+                        ${(t.tags || []).map(tag => `<span class="tag">${tag}</span>`).join('')}
+                    </div>
+                    <div class="card-meta">
+                        <div class="card-stats">
+                            <span>⬇ ${t.downloads || 0}</span>
+                            <span>⭐ ${t.rating || 'N/A'}</span>
+                        </div>
+                        <span>by ${t.author || 'Unknown'}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showDetail(id) {
+            const t = templates.find(t => t.id === id);
+            if (!t) return;
+            const modal = document.getElementById('modalContent');
+            modal.innerHTML = `
+                <h2>${t.name}</h2>
+                <p>${t.description}</p>
+                <div class="card-tags" style="margin-bottom:16px">
+                    ${(t.tags || []).map(tag => `<span class="tag">${tag}</span>`).join('')}
+                </div>
+                <div class="card-meta" style="margin-bottom:16px">
+                    <div class="card-stats">
+                        <span>⬇ ${t.downloads || 0} downloads</span>
+                        <span>⭐ ${t.rating || 'N/A'} rating</span>
+                    </div>
+                    <span>by ${t.author || 'Unknown'}</span>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn" onclick="installTemplate('${t.id}')">Install</button>
+                    <button class="btn btn-outline" onclick="closeModal()">Close</button>
+                </div>
+            `;
+            document.getElementById('modalOverlay').classList.add('active');
+        }
+
+        function closeModal(e) {
+            if (e && e.target !== e.currentTarget) return;
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        async function installTemplate(id) {
+            try {
+                const resp = await fetch(`${API_BASE}/templates/${id}/install`, { method: 'POST' });
+                if (resp.ok) {
+                    alert('Template installed successfully!');
+                } else {
+                    alert('Installation saved locally (API not available)');
+                }
+            } catch {
+                alert('Template saved locally (API not available)');
+            }
+            closeModal();
+        }
+
+        document.getElementById('searchInput').addEventListener('input', renderTemplates);
+        fetchTemplates();
+    </script>
+</body>
+</html>

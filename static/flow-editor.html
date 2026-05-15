@@ -1,0 +1,3604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Editor — Auto Agent Workflow</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+if (typeof Babel === 'undefined') {
+  document.write('<script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"><\/script>');
+}
+</script>
+<link rel="stylesheet" href="https://unpkg.com/reactflow@11/dist/style.css">
+<script crossorigin src="https://unpkg.com/reactflow@11/dist/umd/index.js"></script>
+<style>
+:root {
+  --bg-deep: #faf9f7;
+  --bg-panel: #f0efe9;
+  --bg-elevated: #ffffff;
+  --bg-input: #ffffff;
+  --border: #e8e7e3;
+  --border-active: #d4d3cf;
+  --text-dim: #9b9b9b;
+  --text-body: #6b6b6b;
+  --text-bright: #1a1a1a;
+  --text-white: #111111;
+  --accent-cyan: #0891b2;
+  --accent-green: #16a34a;
+  --accent-red: #dc2626;
+  --accent-amber: #d97706;
+  --accent-blue: #3b82f6;
+  --accent-purple: #7c3aed;
+  --accent-pink: #db2777;
+  --accent-teal: #0d9488;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root { height: 100vh; width: 100vw; }
+
+.loading-screen {
+  display: flex; align-items: center; justify-content: center;
+  height: 100vh; width: 100vw;
+  background: var(--bg-deep);
+  flex-direction: column; gap: 20px;
+}
+
+.loading-screen .spinner {
+  width: 36px; height: 36px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-screen .text {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.app-container {
+  display: flex; flex-direction: column;
+  height: 100vh; width: 100vw;
+}
+
+.toolbar {
+  height: 44px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.toolbar-group {
+  display: flex; align-items: center; gap: 4px;
+}
+
+.toolbar-divider {
+  width: 1px; height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.toolbar-title {
+  font-weight: 600;
+  color: var(--accent-cyan);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+}
+
+.toolbar-flow-name {
+  color: var(--text-bright);
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 120px;
+  max-width: 300px;
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  cursor: text;
+  background: transparent;
+  transition: all 0.15s;
+}
+
+.toolbar-flow-name:hover {
+  border-color: var(--border);
+  background: var(--bg-input);
+}
+
+.toolbar-flow-name:focus {
+  border-color: var(--accent-cyan);
+  background: var(--bg-input);
+  outline: none;
+}
+
+.toolbar-spacer { flex: 1; }
+
+.btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-bright);
+  cursor: pointer;
+  transition: all 0.12s;
+  display: flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+}
+
+.btn:hover { border-color: var(--border-active); background: #f5f4f1; }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: #ffffff;
+  font-weight: 600;
+}
+.btn-primary:hover { background: #c5660a; }
+
+.btn-green {
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+  color: #ffffff;
+  font-weight: 600;
+}
+.btn-green:hover { background: #15803d; }
+
+.btn-red {
+  border-color: var(--accent-red); color: var(--accent-red);
+}
+.btn-red:hover { background: rgba(240,75,92,0.12); }
+
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+
+.btn-icon {
+  width: 30px; height: 30px;
+  padding: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.node-library {
+  width: 220px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.library-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.library-search {
+  margin: 8px 12px;
+}
+
+.library-search input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-bright);
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+}
+
+.library-search input:focus {
+  border-color: var(--accent-cyan);
+}
+
+.library-search input::placeholder { color: var(--text-dim); }
+
+.library-list {
+  flex: 1; overflow-y: auto; padding: 8px;
+}
+
+.library-list::-webkit-scrollbar { width: 4px; }
+.library-list::-webkit-scrollbar-track { background: transparent; }
+.library-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.library-category {
+  margin-bottom: 12px;
+}
+
+.library-category-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+
+.library-node {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  transition: all 0.12s;
+  border: 1px solid transparent;
+  font-size: 12px;
+  color: var(--text-body);
+  user-select: none;
+}
+
+.library-node:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-bright);
+}
+
+.library-node:active { cursor: grabbing; }
+
+.library-node-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.canvas-area {
+  flex: 1;
+  position: relative;
+}
+
+.property-panel {
+  width: 300px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.property-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.property-body {
+  flex: 1; overflow-y: auto; padding: 12px;
+}
+
+.property-body::-webkit-scrollbar { width: 4px; }
+.property-body::-webkit-scrollbar-track { background: transparent; }
+.property-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.property-group {
+  margin-bottom: 16px;
+}
+
+.property-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.property-field {
+  margin-bottom: 10px;
+}
+
+.property-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.property-field input,
+.property-field select,
+.property-field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-bright);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.property-field input:focus,
+.property-field select:focus,
+.property-field textarea:focus {
+  border-color: var(--accent-cyan);
+}
+
+.property-field textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.property-field select {
+  cursor: pointer;
+}
+
+.property-field-check {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.property-field-check input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent-cyan);
+}
+
+.property-empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-dim);
+  text-align: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.property-empty-icon {
+  font-size: 28px;
+  opacity: 0.3;
+}
+
+.react-flow__node {
+  font-family: var(--font-mono);
+}
+
+.react-flow__attribution { display: none !important; }
+
+.react-flow__controls {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text-bright);
+  width: 28px; height: 28px;
+}
+
+.react-flow__controls-button:hover {
+  background: #f5f4f1;
+}
+
+.react-flow__minimap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.edge-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  fill: var(--text-dim);
+}
+
+.toast-container {
+  position: fixed; bottom: 20px; right: 20px;
+  z-index: 1000;
+  display: flex; flex-direction: column-reverse; gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-bright);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  animation: toastIn 0.25s ease-out;
+  max-width: 380px;
+}
+
+.toast-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+.toast-error { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+.toast-info { background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+.toast-exit {
+  animation: toastOut 0.2s ease-in forwards;
+}
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.15);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  min-width: 400px;
+  max-width: 600px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal h3 {
+  color: var(--text-white);
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+
+.modal-actions {
+  display: flex; gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.flow-list-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.flow-list-item:hover {
+  border-color: var(--accent-cyan);
+  background: var(--bg-elevated);
+}
+
+.flow-list-item-name {
+  color: var(--text-bright);
+  font-weight: 500;
+}
+
+.flow-list-item-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.status-badge.draft { background: var(--bg-elevated); color: var(--text-dim); border: 1px solid var(--border); }
+.status-badge.active { background: rgba(76,223,139,0.15); color: var(--accent-green); }
+.status-badge.archived { background: rgba(240,75,92,0.15); color: var(--accent-red); }
+
+.execution-overlay {
+  position: absolute; bottom: 12px; left: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  z-index: 15;
+  min-width: 200px;
+}
+
+.execution-overlay .exec-title {
+  color: var(--text-white);
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.exec-close-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  transition: all 0.15s;
+}
+
+.exec-close-btn:hover {
+  background: var(--bg-input);
+  color: var(--text-bright);
+}
+
+.execution-overlay .exec-progress {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+}
+
+.execution-overlay .exec-progress-bar {
+  flex: 1; height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.execution-overlay .exec-progress-fill {
+  height: 100%;
+  background: var(--accent-cyan);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <div class="text">正在加载流程编辑器...</div>
+  </div>
+</div>
+
+<script type="text/babel">
+const { useState, useCallback, useRef, useEffect, useMemo, createContext, useContext } = React;
+const RF = window.ReactFlow || {};
+const {
+  ReactFlow: FlowCanvas,
+  Controls,
+  MiniMap,
+  Background,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Panel,
+  Handle,
+  Position,
+  MarkerType,
+  ReactFlowProvider,
+  useReactFlow,
+} = RF;
+
+const API_BASE = '/api/automations';
+const IDLE_EXEC_STATUS = Object.freeze({
+  status: 'idle',
+  currentStep: 0,
+  totalSteps: 0,
+  executionId: null,
+  currentStepId: null,
+  latestAiCheck: null,
+  latestAiAssist: null,
+  aiSummary: null,
+  healingCount: 0,
+});
+
+const STEP_TYPE_META = {
+  click: {
+    label: '点击', icon: '⊙', color: '#4b8bf0', bg: 'rgba(75,139,240,0.15)', category: '输入',
+    description: '模拟鼠标点击操作，支持左键/右键单击和双击',
+    params: {
+      button: { type: 'enum', default: 'left', options: ['left', 'right', 'middle'], desc: '鼠标按键类型' },
+      clicks: { type: 'number', default: 1, desc: '点击次数，1=单击，2=双击' },
+      interval: { type: 'number', default: 0, desc: '连击间隔时间(ms)' },
+    },
+    usage: '用于按钮点击、菜单选择等常规UI交互。配置目标定位策略可精确定位点击位置。',
+  },
+  type: {
+    label: '输入文本', icon: '⌨', color: '#39c5cf', bg: 'rgba(57,197,207,0.15)', category: '输入',
+    description: '模拟键盘输入文本内容，支持清空已输入和逐字输入延迟',
+    params: {
+      text: { type: 'string', default: '', desc: '要输入的文本内容' },
+      interval: { type: 'number', default: 0.05, desc: '每个字符输入间隔(秒)' },
+      clear_first: { type: 'boolean', default: false, desc: '输入前是否清空已有内容' },
+    },
+    usage: '用于表单填写、搜索框输入、聊天消息等文本输入场景。',
+  },
+  scroll: {
+    label: '滚动', icon: '⇅', color: '#9b6bf0', bg: 'rgba(155,107,240,0.15)', category: '输入',
+    description: '模拟鼠标滚轮或触控板滚动操作',
+    params: {
+      direction: { type: 'enum', default: 'down', options: ['up', 'down'], desc: '滚动方向' },
+      amount: { type: 'number', default: 3, desc: '滚动量(滚轮刻数)' },
+      step_px: { type: 'number', default: 120, desc: '每刻对应像素' },
+    },
+    usage: '用于页面翻页、列表浏览、无限滚动加载等场景。',
+  },
+  hotkey: {
+    label: '快捷键', icon: '⌃', color: '#d97706', bg: 'rgba(217,119,6,0.15)', category: '输入',
+    description: '发送组合键快捷键，支持修饰键组合',
+    params: {
+      keys: { type: 'array', default: [], desc: '主键列表，如["c","v"]' },
+      modifiers: { type: 'array', default: [], desc: '修饰键，如["ctrl","shift","alt","cmd"]' },
+    },
+    usage: '用于复制粘贴(Ctrl+C/V)、保存(Ctrl+S)、截图等系统快捷键操作。',
+  },
+  drag: {
+    label: '拖拽', icon: '↗', color: '#db2777', bg: 'rgba(219,39,119,0.15)', category: '输入',
+    description: '模拟鼠标拖拽操作，从起点拖动到终点',
+    params: {
+      end_x: { type: 'number', default: 0, desc: '终点X坐标' },
+      end_y: { type: 'number', default: 0, desc: '终点Y坐标' },
+      duration: { type: 'number', default: 0.5, desc: '拖拽持续时间(秒)' },
+      button: { type: 'enum', default: 'left', options: ['left'], desc: '拖拽所用按键' },
+    },
+    usage: '用于文件移动、区域选择、滑块调节等拖拽操作。',
+  },
+  wait: {
+    label: '等待', icon: '⏳', color: '#8b95a5', bg: 'rgba(139,149,165,0.15)', category: '控制',
+    description: '暂停流程执行指定时间，等待页面加载或动画完成',
+    params: {
+      duration_ms: { type: 'number', default: 3000, desc: '等待时长(毫秒)' },
+    },
+    usage: '用于等待页面加载完成、动画过渡效果、API响应返回等需延迟场景。',
+  },
+  condition: {
+    label: '条件判断', icon: '◇', color: '#d97706', bg: 'rgba(217,119,6,0.15)', category: '控制',
+    description: '根据条件表达式判断流程分支走向',
+    params: {
+      expression: { type: 'string', default: '', desc: '条件表达式，如"${count}>5"或"元素存在"' },
+      true_branch: { type: 'string', default: '', desc: '条件为真时跳转的节点ID' },
+      false_branch: { type: 'string', default: '', desc: '条件为假时跳转的节点ID' },
+    },
+    usage: '用于流程分支控制，如检查登录状态、判断查询结果、验证数据等。',
+  },
+  loop: {
+    label: '循环', icon: '↻', color: '#7c3aed', bg: 'rgba(124,58,237,0.15)', category: '控制',
+    description: '重复执行指定步骤集合，支持次数和条件控制',
+    params: {
+      max_iterations: { type: 'number', default: 10, desc: '最大循环次数' },
+      condition: { type: 'string', default: '', desc: '循环终止条件' },
+      loop_step_ids: { type: 'array', default: [], desc: '循环体内的步骤ID列表' },
+    },
+    usage: '用于批量处理数据行、重复网络请求直到成功、分页遍历等场景。',
+  },
+  switch_window: {
+    label: '切换窗口', icon: '⊞', color: '#16a34a', bg: 'rgba(22,163,74,0.15)', category: '窗口',
+    description: '切换当前焦点窗口，支持按标题匹配',
+    params: {
+      title_pattern: { type: 'string', default: '', desc: '窗口标题匹配模式(支持正则)' },
+      wait_for_appear: { type: 'boolean', default: true, desc: '是否等待窗口出现' },
+    },
+    usage: '用于多窗口应用切换、弹窗处理、应用间跳转等。',
+  },
+  navigate: {
+    label: '导航', icon: '🌐', color: '#0891b2', bg: 'rgba(8,145,178,0.15)', category: 'Web',
+    description: '浏览器页面导航，打开指定URL',
+    params: {
+      url: { type: 'string', default: '', desc: '目标URL地址' },
+      wait_strategy: { type: 'enum', default: 'load', options: ['load', 'domcontentloaded', 'networkidle'], desc: '等待策略' },
+    },
+    usage: '用于打开网页、页面跳转、SPA路由切换等Web导航场景。',
+  },
+  upload_file: {
+    label: '上传文件', icon: '⇧', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', category: 'Web',
+    description: '上传本地文件到网页文件输入控件',
+    params: {
+      file_path: { type: 'string', default: '', desc: '本地文件绝对路径' },
+      selector: { type: 'string', default: '', desc: '文件输入元素选择器' },
+    },
+    usage: '用于表单文件上传、图片上传、文档提交等Web文件操作。',
+  },
+  download_file: {
+    label: '下载文件', icon: '⇩', color: '#16a34a', bg: 'rgba(22,163,74,0.15)', category: 'Web',
+    description: '从指定URL下载文件到本地路径',
+    params: {
+      url: { type: 'string', default: '', desc: '下载文件URL' },
+      save_path: { type: 'string', default: '', desc: '本地保存路径' },
+    },
+    usage: '用于网页文件下载、报告导出、资源获取等场景。',
+  },
+  file_op: {
+    label: '文件操作', icon: '📁', color: '#d97706', bg: 'rgba(217,119,6,0.15)', category: '文件',
+    description: '执行本地文件系统操作，如复制、移动、删除等',
+    params: {
+      operation: { type: 'enum', default: 'copy', options: ['copy', 'move', 'delete', 'rename', 'mkdir'], desc: '操作类型' },
+      source: { type: 'string', default: '', desc: '源文件/目录路径' },
+      destination: { type: 'string', default: '', desc: '目标路径(复制/移动/重命名时使用)' },
+    },
+    usage: '用于文件整理、数据备份、临时文件清理等文件管理任务。',
+  },
+};
+
+const STEP_CATEGORIES = ['输入', '控制', '窗口', 'Web', '文件'];
+const STEP_TYPES_BY_CATEGORY = {};
+Object.entries(STEP_TYPE_META).forEach(([type, meta]) => {
+  if (!STEP_TYPES_BY_CATEGORY[meta.category]) STEP_TYPES_BY_CATEGORY[meta.category] = [];
+  STEP_TYPES_BY_CATEGORY[meta.category].push(type);
+});
+
+function generateId() {
+  return 'step_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function generateFlowId() {
+  return 'flow_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function createStepData(type) {
+  const meta = STEP_TYPE_META[type] || {};
+  const defaultActions = {
+    click: { button: 'left', clicks: 1, interval: 0 },
+    type: { text: '', interval: 0.05, clear_first: false },
+    scroll: { direction: 'down', amount: 3, step_px: 120 },
+    hotkey: { keys: [], modifiers: [] },
+    drag: { end_x: 0, end_y: 0, duration: 0.5, button: 'left' },
+    wait: { duration_ms: 3000 },
+    condition: { expression: '', true_branch: '', false_branch: '' },
+    loop: { max_iterations: 10, condition: '' },
+    switch_window: { title_pattern: '', wait_for_appear: true },
+    navigate: { url: '', wait_strategy: 'load' },
+    upload_file: { file_path: '', selector: '' },
+    download_file: { url: '', save_path: '' },
+    file_op: { operation: 'copy', source: '', destination: '' },
+  };
+  return {
+    id: generateId(),
+    type: type,
+    action: defaultActions[type] || {},
+    target: { strategy: 'position' },
+    atomic: true,
+    depends_on: [],
+    preconditions: [],
+    branches: [],
+    execution_order: null,
+    metadata: {},
+    delay: type === 'wait' ? 3000 : 500,
+    condition: null,
+    on_error: 'abort',
+    retry_count: 3,
+    description: meta.label || type,
+    verification_enabled: true,
+    verification_strict: false,
+  };
+}
+
+function createEmptyFlowShell(flowId, name = '新建流程') {
+  return {
+    id: flowId,
+    name,
+    description: '',
+    structure_version: 'atomic-v1',
+    entry_step_ids: [],
+    metadata: {},
+    steps: [],
+    variables: [],
+    error_handling: {
+      default_action: 'abort',
+      max_retries: 3,
+      retry_delay_ms: 1000,
+      screenshot_on_error: true,
+      notify_on_error: true,
+    },
+    confidence: 0,
+    source_session_id: null,
+    source_pattern: null,
+    status: 'draft',
+    execution_count: 0,
+    success_count: 0,
+  };
+}
+
+function flowToReactFlow(flow) {
+  const steps = flow.steps || [];
+  const nodes = steps.map((step, index) => {
+    const meta = STEP_TYPE_META[step.type] || {};
+    return {
+      id: step.id,
+      type: 'workflowNode',
+      position: step.metadata?.position || { x: 250 + (index % 6) * 320, y: 100 + Math.floor(index / 6) * 160 },
+      data: {
+        label: step.description || meta.label || step.type,
+        stepType: step.type,
+        color: meta.color || '#8b95a5',
+        bgColor: meta.bg || 'rgba(139,149,165,0.15)',
+        stepData: {
+          ...step,
+          ai_analysis: step.ai_analysis || step.metadata?.ai_analysis || null,
+        },
+        status: 'idle',
+      },
+    };
+  });
+
+  const edges = [];
+  (flow.steps || []).forEach(step => {
+    (step.branches || []).forEach(branch => {
+      edges.push({
+        id: `e_${step.id}_${branch.target_step_id}_${branch.outcome || 'default'}`,
+        source: step.id,
+        target: branch.target_step_id,
+        label: branch.outcome && branch.outcome !== 'default' ? branch.outcome : '',
+        type: 'smoothstep',
+        animated: false,
+        style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+        data: {
+          outcome: branch.outcome || 'default',
+          condition: branch.condition || null,
+          description: branch.description || '',
+          metadata: branch.metadata || {},
+        },
+      });
+    });
+  });
+
+  return { nodes, edges };
+}
+
+function reactFlowToFlow(flowId, name, nodes, edges, existingFlow) {
+  const steps = nodes.map(node => {
+    const existingStep = existingFlow?.steps?.find(s => s.id === node.id);
+    const nodeStepData = node.data?.stepData || {};
+    const base = existingStep ? { ...existingStep } : createStepData(node.data?.stepType || 'click');
+    return {
+      ...base,
+      id: node.id,
+      type: node.data?.stepType || base.type || 'click',
+      description: node.data?.label || base.description || '',
+      action: nodeStepData.action || base.action || {},
+      target: nodeStepData.target || base.target || { strategy: 'position' },
+      delay: nodeStepData.delay !== undefined ? nodeStepData.delay : base.delay,
+      retry_count: nodeStepData.retry_count !== undefined ? nodeStepData.retry_count : base.retry_count,
+      verification_enabled: nodeStepData.verification_enabled !== undefined ? nodeStepData.verification_enabled : base.verification_enabled,
+      verification_strict: nodeStepData.verification_strict !== undefined ? nodeStepData.verification_strict : base.verification_strict,
+      condition: nodeStepData.condition !== undefined ? nodeStepData.condition : base.condition,
+      preconditions: nodeStepData.preconditions !== undefined ? nodeStepData.preconditions : (base.preconditions || []),
+      on_error: nodeStepData.on_error || base.on_error || 'abort',
+      atomic: nodeStepData.atomic !== undefined ? nodeStepData.atomic : base.atomic,
+      execution_order: base.execution_order !== null ? base.execution_order : undefined,
+      metadata: {
+        ...(base.metadata || {}),
+        ...(nodeStepData.metadata || {}),
+        ...(nodeStepData.ai_analysis ? { ai_analysis: nodeStepData.ai_analysis } : {}),
+        position: node.position,
+      },
+    };
+  });
+
+  const stepIds = new Set(steps.map(s => s.id));
+  steps.forEach(step => {
+    step.branches = [];
+    step.depends_on = [];
+  });
+
+  edges.forEach(edge => {
+    if (!stepIds.has(edge.source) || !stepIds.has(edge.target)) return;
+    const sourceStep = steps.find(s => s.id === edge.source);
+    const targetStep = steps.find(s => s.id === edge.target);
+    if (!sourceStep || !targetStep) return;
+
+    sourceStep.branches.push({
+      target_step_id: edge.target,
+      outcome: edge.data?.outcome || 'default',
+      condition: edge.data?.condition || null,
+      description: edge.data?.description || '',
+      metadata: edge.data?.metadata || {},
+    });
+
+    if (!targetStep.depends_on.includes(edge.source)) {
+      targetStep.depends_on.push(edge.source);
+    }
+  });
+
+  const entryIds = steps.filter(s => !s.depends_on.length).map(s => s.id);
+
+  return {
+    id: flowId,
+    name: name,
+    description: existingFlow?.description || '',
+    structure_version: existingFlow?.structure_version || 'atomic-v1',
+    entry_step_ids: entryIds.length ? entryIds : (steps.length ? [steps[0].id] : []),
+    metadata: existingFlow?.metadata || {},
+    steps: steps,
+    variables: existingFlow?.variables || [],
+    error_handling: existingFlow?.error_handling || {
+      default_action: 'abort', max_retries: 3, retry_delay_ms: 1000,
+      screenshot_on_error: true, notify_on_error: true,
+    },
+    confidence: existingFlow?.confidence || 0,
+    source_session_id: existingFlow?.source_session_id || null,
+    source_pattern: existingFlow?.source_pattern || null,
+    behavior_tree: existingFlow?.behavior_tree || null,
+    status: existingFlow?.status || 'draft',
+    execution_count: existingFlow?.execution_count || 0,
+    success_count: existingFlow?.success_count || 0,
+  };
+}
+
+const WorkflowNode = React.memo(function WorkflowNode({ data, selected }) {
+  const color = data.color || '#8b95a5';
+  const bgColor = data.bgColor || 'rgba(139,149,165,0.10)';
+  const label = data.label || 'Step';
+  const runtimeLabel = data.runtimeLabel || '';
+  const statusColors = {
+    idle: bgColor,
+    running: 'rgba(240,179,75,0.15)',
+    success: 'rgba(76,223,139,0.15)',
+    failed: 'rgba(240,75,92,0.12)',
+    skipped: 'rgba(139,149,165,0.06)',
+  };
+  const statusBorder = {
+    idle: selected ? color : 'transparent',
+    running: '#d97706',
+    success: '#16a34a',
+    failed: '#dc2626',
+    skipped: '#9b9b9b',
+  };
+
+  return (
+    <div style={{
+      background: '#ffffff',
+      border: `1.5px solid ${statusBorder[data.status] || (selected ? color : '#e8e7e3')}`,
+      borderRadius: '6px',
+      padding: '0',
+      minWidth: '180px',
+      maxWidth: '280px',
+      boxShadow: data.status === 'running'
+        ? '0 0 0 2px rgba(217,119,6,0.12), 0 8px 24px rgba(217,119,6,0.16)'
+        : selected
+          ? `0 0 16px ${color}20`
+          : '0 1px 4px rgba(0,0,0,0.06)',
+      transition: 'all 0.15s',
+    }}>
+      <Handle type="target" position={Position.Left}
+        style={{ background: '#d4d3cf', border: '2px solid #ffffff', width: 10, height: 10, left: -5 }} />
+
+      <div style={{
+        background: statusColors[data.status] || bgColor,
+        padding: '6px 10px',
+        borderBottom: `1px solid ${color}15`,
+        display: 'flex', alignItems: 'center', gap: '6px',
+        borderTopLeftRadius: '4px', borderTopRightRadius: '4px',
+      }}>
+        <span style={{
+          width: '7px', height: '7px', borderRadius: '2px',
+          background: data.status === 'running' ? '#d97706' : data.status === 'success' ? '#16a34a' : data.status === 'failed' ? '#dc2626' : color,
+          flexShrink: 0,
+        }}></span>
+        <span style={{
+          fontSize: '11px', fontWeight: '600', color: '#1a1a1a',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: 1,
+        }}>
+          {label}
+        </span>
+        {data.status === 'running' && (
+          <span style={{
+            fontSize: '9px',
+            color: '#d97706',
+            animation: 'pulse 1s infinite',
+            fontWeight: '700',
+            padding: '1px 6px',
+            borderRadius: '999px',
+            background: 'rgba(217,119,6,0.12)',
+          }}>
+            {runtimeLabel || '执行中'}
+          </span>
+        )}
+      </div>
+
+      <div style={{
+        padding: '5px 10px',
+        fontSize: '10px',
+        color: '#9b9b9b',
+        display: 'flex', alignItems: 'center', gap: '4px',
+      }}>
+        <span style={{ color: color + '80' }}>{STEP_TYPE_META[data.stepType]?.icon || '◆'}</span>
+        <span>{STEP_TYPE_META[data.stepType]?.label || data.stepType}</span>
+        {data.stepData?.delay > 0 && (
+          <span style={{ marginLeft: 'auto', fontFamily: 'monospace' }}>
+            {data.stepData.delay}ms
+          </span>
+        )}
+      </div>
+
+      <Handle type="source" position={Position.Right}
+        style={{ background: color, border: '2px solid #ffffff', width: 10, height: 10, right: -5 }} />
+    </div>
+  );
+});
+
+function NodeLibrary({ searchTerm, onSearchChange, selectedNode }) {
+  const filteredCategories = useMemo(() => {
+    if (!searchTerm) return STEP_CATEGORIES;
+    return STEP_CATEGORIES.filter(cat => {
+      const types = STEP_TYPES_BY_CATEGORY[cat] || [];
+      return types.some(t => {
+        const meta = STEP_TYPE_META[t];
+        return (meta.label + t).toLowerCase().includes(searchTerm.toLowerCase());
+      });
+    });
+  }, [searchTerm]);
+
+  const onDragStart = useCallback((event, nodeType) => {
+    const stepData = createStepData(nodeType);
+    event.dataTransfer.setData('application/reactflow', JSON.stringify({
+      nodeType: 'workflowNode',
+      stepType: nodeType,
+      stepData: stepData,
+    }));
+    event.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  return (
+    <div className="node-library">
+      <div className="library-header">
+        <span>节点库</span>
+      </div>
+      <div className="library-search">
+        <input
+          type="text"
+          placeholder="搜索节点类型..."
+          value={searchTerm}
+          onChange={e => onSearchChange(e.target.value)}
+        />
+      </div>
+      <div className="library-list">
+        {filteredCategories.map(category => {
+          let types = (STEP_TYPES_BY_CATEGORY[category] || []);
+          if (searchTerm) {
+            types = types.filter(t => {
+              const meta = STEP_TYPE_META[t];
+              return (meta.label + t).toLowerCase().includes(searchTerm.toLowerCase());
+            });
+          }
+          if (!types.length) return null;
+
+          return (
+            <div key={category} className="library-category">
+              <div className="library-category-title">{category}</div>
+              {types.map(type => {
+                const meta = STEP_TYPE_META[type];
+                return (
+                  <div
+                    key={type}
+                    className="library-node"
+                    draggable
+                    onDragStart={e => onDragStart(e, type)}
+                    title={meta.description || ''}
+                  >
+                    <div className="library-node-dot" style={{ background: meta.color }}></div>
+                    <span>{meta.icon}</span>
+                    <span>{meta.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {filteredCategories.length === 0 && (
+          <div style={{ padding: '12px', color: 'var(--text-dim)', textAlign: 'center', fontSize: '12px' }}>
+            无匹配节点
+          </div>
+        )}
+      </div>
+
+      <div className="property-footer" style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
+        <button
+          className="btn btn-sm btn-primary"
+          onClick={() => analyzeNodeWithVision(selectedNode)}
+          disabled={!selectedNode}
+          style={{ width: '100%' }}
+        >
+          🤖 AI 分析此节点
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PropertyPanel({ selectedNode, onUpdateNode, nodes }) {
+  if (!selectedNode) {
+    return (
+      <div className="property-panel">
+        <div className="property-header">属性</div>
+        <div className="property-empty">
+          <div className="property-empty-icon">◈</div>
+          <div>选择一个节点</div>
+          <div style={{ fontSize: '11px' }}>以编辑其属性</div>
+        </div>
+      </div>
+    );
+  }
+
+  const stepData = selectedNode.data?.stepData || {};
+  const aiAnalysis = stepData.ai_analysis || stepData.metadata?.ai_analysis || null;
+  const locatorMeta = stepData.metadata || {};
+  const locatorRiskFlags = Array.isArray(locatorMeta.locator_risk_flags) ? locatorMeta.locator_risk_flags : [];
+  const locatorRequiresConfirmation = locatorMeta.locator_requires_confirmation === true && locatorMeta.locator_confirmed !== true;
+  const meta = STEP_TYPE_META[stepData.type] || {};
+
+  const updateField = (field, value) => {
+    const updated = {
+      ...selectedNode,
+      data: {
+        ...selectedNode.data,
+        label: field === 'description' ? (value || meta.label || selectedNode.data.stepType) : selectedNode.data.label,
+        stepData: { ...stepData, [field]: value },
+      },
+    };
+    onUpdateNode(updated);
+  };
+
+  const updateTarget = (field, value) => {
+    const updated = {
+      ...selectedNode,
+      data: {
+        ...selectedNode.data,
+        stepData: {
+          ...stepData,
+          target: { ...(stepData.target || {}), [field]: value },
+        },
+      },
+    };
+    onUpdateNode(updated);
+  };
+
+  const updateMetadata = (updates) => {
+    const updated = {
+      ...selectedNode,
+      data: {
+        ...selectedNode.data,
+        stepData: {
+          ...stepData,
+          metadata: { ...(stepData.metadata || {}), ...updates },
+        },
+      },
+    };
+    onUpdateNode(updated);
+  };
+
+  return (
+    <div className="property-panel">
+      <div className="property-header">
+        <span style={{ color: meta.color }}>{meta.icon} {meta.label} 属性</span>
+      </div>
+      <div className="property-body">
+        <div className="property-group">
+          <div className="property-group-label">基本信息</div>
+          <div className="property-field">
+            <label>描述</label>
+            <input
+              type="text"
+              value={stepData.description || ''}
+              onChange={e => updateField('description', e.target.value)}
+              placeholder="步骤描述"
+            />
+          </div>
+          <div className="property-field">
+            <label>步骤类型</label>
+            <select
+              value={stepData.type || 'click'}
+              onChange={e => updateField('type', e.target.value)}
+            >
+              {Object.entries(STEP_TYPE_META).map(([type, m]) => (
+                <option key={type} value={type}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="property-field">
+            <label>延迟 (ms)</label>
+            <input
+              type="number"
+              value={stepData.delay || 500}
+              onChange={e => updateField('delay', parseInt(e.target.value) || 0)}
+              min="0"
+              step="100"
+            />
+          </div>
+        </div>
+
+        <div className="property-group">
+          <div className="property-group-label">目标定位</div>
+          {locatorRequiresConfirmation && (
+            <div className="property-field" style={{ background: 'rgba(245, 158, 11, 0.10)', border: '1px solid rgba(245, 158, 11, 0.24)', borderRadius: '12px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#b45309' }}>此节点定位仍不确定，默认不会直接盲执行</div>
+              <div style={{ marginTop: '4px', fontSize: '11px', lineHeight: 1.5, color: '#92400e' }}>
+                {locatorMeta.locator_confidence_reason || '当前录制结果缺少稳定定位线索，建议先检查并确认目标。'}
+              </div>
+              {locatorRiskFlags.length > 0 && (
+                <div style={{ marginTop: '6px', fontSize: '10px', lineHeight: 1.45, color: '#a16207' }}>
+                  {locatorRiskFlags.slice(0, 2).join(' ')}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="property-field">
+            <label>定位策略</label>
+            <select
+              value={(stepData.target || {}).strategy || 'position'}
+              onChange={e => updateTarget('strategy', e.target.value)}
+            >
+              <option value="position">坐标定位</option>
+              <option value="accessibility_id">辅助功能ID</option>
+              <option value="text_match">文本匹配</option>
+              <option value="css_selector">CSS选择器</option>
+              <option value="xpath">XPath</option>
+              <option value="image_match">图像匹配</option>
+            </select>
+          </div>
+          <div className="property-field">
+            <label>选择器/定位符</label>
+            <input
+              type="text"
+              value={(stepData.target || {}).selector || ''}
+              onChange={e => updateTarget('selector', e.target.value)}
+            />
+          </div>
+          <div className="property-field">
+            <label>窗口标题</label>
+            <input
+              type="text"
+              value={(stepData.target || {}).window_title || ''}
+              onChange={e => updateTarget('window_title', e.target.value)}
+            />
+          </div>
+          <div className="property-field property-field-check">
+            <input
+              type="checkbox"
+              checked={locatorMeta.locator_confirmed === true}
+              onChange={e => updateMetadata({
+                locator_confirmed: e.target.checked,
+                locator_requires_confirmation: !e.target.checked,
+              })}
+              id="locator-confirmed"
+            />
+            <label htmlFor="locator-confirmed" style={{ margin: 0 }}>我已人工确认该目标定位可直接执行</label>
+          </div>
+        </div>
+
+        <div className="property-group">
+          <div className="property-group-label">执行配置</div>
+          <div className="property-field">
+            <label>错误处理</label>
+            <select
+              value={stepData.on_error || 'abort'}
+              onChange={e => updateField('on_error', e.target.value)}
+            >
+              <option value="abort">中止执行</option>
+              <option value="retry">重试</option>
+              <option value="skip">跳过</option>
+              <option value="ask_user">询问用户</option>
+              <option value="fallback">回退</option>
+              <option value="relocate">重新定位</option>
+              <option value="adjust_and_retry">调整并重试</option>
+            </select>
+          </div>
+          <div className="property-field">
+            <label>重试次数</label>
+            <input
+              type="number"
+              value={stepData.retry_count || 3}
+              onChange={e => updateField('retry_count', parseInt(e.target.value) || 0)}
+              min="0"
+              max="10"
+            />
+          </div>
+          <div className="property-field property-field-check">
+            <input
+              type="checkbox"
+              checked={stepData.verification_enabled !== false}
+              onChange={e => updateField('verification_enabled', e.target.checked)}
+              id="verif-enabled"
+            />
+            <label htmlFor="verif-enabled" style={{ margin: 0 }}>启用验证</label>
+          </div>
+          <div className="property-field property-field-check">
+            <input
+              type="checkbox"
+              checked={stepData.verification_strict === true}
+              onChange={e => updateField('verification_strict', e.target.checked)}
+              id="verif-strict"
+            />
+            <label htmlFor="verif-strict" style={{ margin: 0 }}>严格验证模式</label>
+          </div>
+        </div>
+
+        <div className="property-group">
+          <div className="property-group-label">操作参数</div>
+          {stepData.type === 'click' && (
+            <>
+              <div className="property-field">
+                <label>按钮</label>
+                <select
+                  value={(stepData.action || {}).button || 'left'}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), button: e.target.value })}
+                >
+                  <option value="left">左键</option>
+                  <option value="right">右键</option>
+                  <option value="middle">中键</option>
+                </select>
+              </div>
+              <div className="property-field">
+                <label>点击次数</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).clicks || 1}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), clicks: parseInt(e.target.value) || 1 })}
+                  min="1"
+                  max="5"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'type' && (
+            <>
+              <div className="property-field">
+                <label>输入文本</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).text || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), text: e.target.value })}
+                  placeholder="要输入的文本内容"
+                />
+              </div>
+              <div className="property-field">
+                <label>输入间隔 (秒)</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).interval || 0.05}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), interval: parseFloat(e.target.value) || 0 })}
+                  min="0"
+                  max="1"
+                  step="0.01"
+                />
+              </div>
+              <div className="property-field property-field-check">
+                <input
+                  type="checkbox"
+                  checked={(stepData.action || {}).clear_first === true}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), clear_first: e.target.checked })}
+                  id="clear-first"
+                />
+                <label htmlFor="clear-first" style={{ margin: 0 }}>先清空内容</label>
+              </div>
+            </>
+          )}
+          {stepData.type === 'hotkey' && (
+            <>
+              <div className="property-field">
+                <label>快捷键 (逗号分隔)</label>
+                <input
+                  type="text"
+                  value={((stepData.action || {}).keys || []).join(',')}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), keys: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
+                  placeholder="如: command, c"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'wait' && (
+            <>
+              <div className="property-field">
+                <label>等待时长 (秒)</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).duration || (stepData.delay || 3000) / 1000}
+                  onChange={e => {
+                    const duration = parseFloat(e.target.value) || 0;
+                    updateField('action', { ...(stepData.action || {}), duration });
+                    updateField('delay', Math.round(duration * 1000));
+                  }}
+                  min="0"
+                  max="60"
+                  step="0.5"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'scroll' && (
+            <>
+              <div className="property-field">
+                <label>方向</label>
+                <select
+                  value={(stepData.action || {}).direction || 'down'}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), direction: e.target.value })}
+                >
+                  <option value="down">向下</option>
+                  <option value="up">向上</option>
+                  <option value="left">向左</option>
+                  <option value="right">向右</option>
+                </select>
+              </div>
+              <div className="property-field">
+                <label>滚动量</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).amount || 3}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), amount: parseInt(e.target.value) || 0 })}
+                  min="1"
+                  max="20"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'navigate' && (
+            <>
+              <div className="property-field">
+                <label>URL</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).url || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), url: e.target.value })}
+                  placeholder="https://..."
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'switch_window' && (
+            <>
+              <div className="property-field">
+                <label>窗口标题</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).window_title || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), window_title: e.target.value })}
+                  placeholder="窗口标题关键词"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'condition' && (
+            <>
+              <div className="property-field">
+                <label>条件表达式</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).expression || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), expression: e.target.value })}
+                  placeholder="如: vars.count > 5"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'loop' && (
+            <>
+              <div className="property-field">
+                <label>最大循环次数</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).max_iterations || 10}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), max_iterations: parseInt(e.target.value) || 1 })}
+                  min="1"
+                  max="100"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'file_op' && (
+            <>
+              <div className="property-field">
+                <label>操作</label>
+                <select
+                  value={(stepData.action || {}).operation || 'copy'}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), operation: e.target.value })}
+                >
+                  <option value="copy">复制</option>
+                  <option value="move">移动</option>
+                  <option value="delete">删除</option>
+                  <option value="read">读取</option>
+                  <option value="write">写入</option>
+                  <option value="mkdir">创建目录</option>
+                </select>
+              </div>
+              <div className="property-field">
+                <label>源路径</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).path || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), path: e.target.value })}
+                  placeholder="/path/to/source"
+                />
+              </div>
+              <div className="property-field">
+                <label>目标路径</label>
+                <input
+                  type="text"
+                  value={(stepData.action || {}).destination || ''}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), destination: e.target.value })}
+                  placeholder="/path/to/destination"
+                />
+              </div>
+            </>
+          )}
+          {stepData.type === 'drag' && (
+            <>
+              <div className="property-field">
+                <label>目标 X</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).end_x || 0}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), end_x: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="property-field">
+                <label>目标 Y</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).end_y || 0}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), end_y: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="property-field">
+                <label>持续时间 (秒)</label>
+                <input
+                  type="number"
+                  value={(stepData.action || {}).duration || 0.5}
+                  onChange={e => updateField('action', { ...(stepData.action || {}), duration: parseFloat(e.target.value) || 0.1 })}
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="property-group">
+          <div className="property-group-label">节点信息</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+            <div>ID: {stepData.id}</div>
+            <div>类型: {stepData.type}</div>
+            <div>位置: x={Math.round(selectedNode.position.x)}, y={Math.round(selectedNode.position.y)}</div>
+          </div>
+        </div>
+
+        {aiAnalysis && (
+          <div className="property-group">
+            <div className="property-group-label">AI 分析</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: 'var(--text-body)' }}>
+              {aiAnalysis.intent && (
+                <div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: '3px' }}>用户意图</div>
+                  <div>{aiAnalysis.intent}</div>
+                </div>
+              )}
+              {aiAnalysis.ui_state && (
+                <div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: '3px' }}>界面状态</div>
+                  <div>{aiAnalysis.ui_state}</div>
+                </div>
+              )}
+              {Array.isArray(aiAnalysis.suggested_next_actions) && aiAnalysis.suggested_next_actions.length > 0 && (
+                <div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: '3px' }}>建议下一步</div>
+                  <div>{aiAnalysis.suggested_next_actions.join(' / ')}</div>
+                </div>
+              )}
+              {aiAnalysis.risk && (
+                <div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: '3px' }}>主要风险</div>
+                  <div>{aiAnalysis.risk}</div>
+                </div>
+              )}
+              {aiAnalysis.confidence !== undefined && (
+                <div>
+                  <div style={{ color: 'var(--text-dim)', marginBottom: '3px' }}>AI 置信度</div>
+                  <div>{Number(aiAnalysis.confidence || 0).toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {meta.description && (
+          <div className="property-group">
+            <div className="property-group-label">节点说明</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-body)', lineHeight: '1.6' }}>
+              {meta.description}
+            </div>
+            {meta.usage && (
+              <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '6px', lineHeight: '1.5' }}>
+                <span style={{ fontWeight: '600', color: 'var(--accent-amber)' }}>用法: </span>
+                {meta.usage}
+              </div>
+            )}
+            {meta.params && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '600', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>参数列表</div>
+                {Object.entries(meta.params).map(([key, p]) => (
+                  <div key={key} style={{ fontSize: '10px', color: 'var(--text-body)', marginBottom: '3px', padding: '3px 6px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-cyan)', fontWeight: '600' }}>{key}</span>
+                    <span style={{ color: 'var(--text-dim)', marginLeft: '6px' }}>{p.type}</span>
+                    {p.default !== undefined && p.default !== '' && (
+                      <span style={{ color: 'var(--accent-amber)', marginLeft: '4px' }}>= {String(p.default)}</span>
+                    )}
+                    <span style={{ display: 'block', marginTop: '1px' }}>{p.desc}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Toast({ toasts, onRemove }) {
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          className={`toast toast-${t.type || 'info'}${t.exiting ? ' toast-exit' : ''}`}
+          onClick={() => onRemove(t.id)}
+          style={{ cursor: 'pointer' }}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FlowListModal({ onClose, onSelect, onDelete }) {
+  const [flows, setFlows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    fetch(API_BASE + '?limit=100')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setFlows(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filteredFlows = useMemo(() => {
+    if (!search.trim()) return flows;
+    const q = search.toLowerCase();
+    return flows.filter(f =>
+      f.name.toLowerCase().includes(q) ||
+      (f.id || '').toLowerCase().includes(q) ||
+      (f.description || '').toLowerCase().includes(q)
+    );
+  }, [flows, search]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>打开流程</h3>
+        <div style={{ marginBottom: '10px' }}>
+          <input
+            type="text"
+            className="toolbar-flow-name"
+            placeholder="🔍 搜索流程名称..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: '100%', padding: '6px 10px' }}
+            autoFocus
+          />
+        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '20px' }}>加载中...</div>
+        ) : filteredFlows.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '20px' }}>
+            {search ? '未找到匹配的流程' : '暂无流程，请先创建新流程'}
+          </div>
+        ) : (
+          filteredFlows.map(flow => (
+            <div key={flow.id} className="flow-list-item" onClick={() => onSelect(flow.id)}>
+              <div>
+                <div className="flow-list-item-name">{flow.name}</div>
+                <div className="flow-list-item-meta">
+                  {flow.steps?.length || 0} 步骤 · {flow.status || 'draft'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <span className={`status-badge ${flow.status || 'draft'}`}>
+                  {flow.status === 'active' ? '活跃' : flow.status === 'archived' ? '归档' : '草稿'}
+                </span>
+                <button
+                  className="btn btn-sm btn-red"
+                  onClick={e => { e.stopPropagation(); onDelete(flow.id); }}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <div className="modal-actions">
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={() => onSelect('new')}>新建空白流程</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepLogs, runtimeAi, onClose }) {
+  if (!status || status === 'idle') return null;
+
+  const normalizedLogs = stepLogs || [];
+  const stepAttempts = {};
+  const logsWithAttempts = normalizedLogs.map((log, index) => {
+    const key = log.step_id || `log-${index}`;
+    const attempt = (stepAttempts[key] || 0) + 1;
+    stepAttempts[key] = attempt;
+    return { ...log, attempt };
+  });
+
+  const latestByStep = new Map();
+  logsWithAttempts.forEach((log, index) => {
+    const key = log.step_id || `log-${index}`;
+    latestByStep.set(key, log);
+  });
+
+  const latestStepLogs = Array.from(latestByStep.values());
+  const failedLogs = logsWithAttempts.filter(l => l.status === 'failed');
+  const successSteps = latestStepLogs.filter(l => l.status === 'success').length;
+  const failedSteps = latestStepLogs.filter(l => l.status === 'failed').length;
+  const skippedSteps = latestStepLogs.filter(l => l.status === 'skipped').length;
+  const pendingSteps = latestStepLogs.filter(l => l.status === 'pending').length;
+  const retryFailures = Math.max(failedLogs.length - failedSteps, 0);
+  const latestAssist = runtimeAi?.latestAiAssist;
+  const latestCheck = runtimeAi?.latestAiCheck;
+  const summary = runtimeAi?.aiSummary;
+  const titleText =
+    status === 'running' ? '⚡ 执行中'
+    : status === 'completed' ? '✅ 执行完成'
+    : status === 'partial' ? '⚠️ 部分完成'
+    : status === 'failed' ? '❌ 执行失败'
+    : status === 'aborted' ? '🛑 已中止'
+    : status === 'paused' ? '⏸️ 已暂停'
+    : `⏸️ ${status}`;
+  const progressColor =
+    status === 'failed' ? 'var(--accent-red)'
+    : status === 'aborted' ? 'var(--accent-red)'
+    : status === 'partial' ? 'var(--accent-amber)'
+    : status === 'completed' ? 'var(--accent-green)'
+    : 'var(--accent-cyan)';
+
+  return (
+    <div className="execution-overlay">
+      <div className="exec-title">
+        <span>{titleText}</span>
+        {onClose && status !== 'running' && status !== 'paused' && (
+          <button className="exec-close-btn" onClick={onClose} title="关闭">✕</button>
+        )}
+      </div>
+      <div className="exec-progress">
+        <span>{currentStep}/{totalSteps}</span>
+        <div className="exec-progress-bar">
+          <div className="exec-progress-fill" style={{
+            width: totalSteps ? `${(currentStep / totalSteps) * 100}%` : '0%',
+            background: progressColor,
+          }}></div>
+        </div>
+      </div>
+
+      {(currentStepId || latestAssist || latestCheck || summary) && (
+        <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px', display: 'grid', gap: '6px' }}>
+          {currentStepId && (
+            <div style={{ fontSize: '11px', color: 'var(--text-body)' }}>
+              当前激活节点：<span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>{currentStepId}</span>
+            </div>
+          )}
+          {runtimeAi?.healingCount > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--accent-amber)' }}>
+              AI 自愈已触发 {runtimeAi.healingCount} 次
+            </div>
+          )}
+          {latestCheck && (
+            <div style={{
+              fontSize: '11px',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: latestCheck.level === 'error' ? 'rgba(220,38,38,0.08)' : latestCheck.level === 'warning' ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.08)',
+              borderLeft: `3px solid ${latestCheck.level === 'error' ? 'var(--accent-red)' : latestCheck.level === 'warning' ? 'var(--accent-amber)' : 'var(--accent-green)'}`,
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '2px' }}>AI 检查 · {latestCheck.title || '运行检查'}</div>
+              <div>{latestCheck.summary || '执行状态正常'}</div>
+            </div>
+          )}
+          {latestAssist && (
+            <div style={{
+              fontSize: '11px',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(59,130,246,0.10)',
+              borderLeft: '3px solid var(--accent-cyan)',
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '2px' }}>{latestAssist.title || 'AI 协同建议'}</div>
+              <div>{latestAssist.summary || 'AI 正在协助调整执行。'}</div>
+            </div>
+          )}
+          {summary && (summary.warnings?.length || summary.optimization_items?.length) ? (
+            <div style={{
+              fontSize: '11px',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(15,23,42,0.04)',
+              border: '1px solid var(--border)',
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '4px' }}>流程优化结果</div>
+              {summary.warnings?.length > 0 && (
+                <div style={{ color: 'var(--accent-amber)', marginBottom: summary.optimization_items?.length ? '4px' : 0 }}>
+                  {summary.warnings.slice(0, 2).join('；')}
+                </div>
+              )}
+              {summary.optimization_items?.length > 0 && (
+                <div style={{ color: 'var(--text-body)' }}>{summary.optimization_items.slice(0, 2).join('；')}</div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {(status === 'completed' || status === 'partial' || status === 'failed' || status === 'aborted') && (
+        <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+            执行详情 ({successSteps} 步成功{failedSteps > 0 ? ` · ${failedSteps} 步失败` : ''}{retryFailures > 0 ? ` · ${retryFailures} 次重试失败` : ''}{skippedSteps > 0 ? ` · ${skippedSteps} 步跳过` : ''}{pendingSteps > 0 ? ` · ${pendingSteps} 步未执行` : ''})
+          </div>
+          {logsWithAttempts.slice(0, 15).map((log, i) => (
+            <div key={i} style={{
+              fontSize: '10px',
+              padding: '3px 6px',
+              marginBottom: '2px',
+              borderRadius: 'var(--radius-sm)',
+              background: log.status === 'failed' ? 'rgba(220,38,38,0.08)' : log.status === 'success' ? 'rgba(22,163,74,0.06)' : log.status === 'skipped' ? 'rgba(245,158,11,0.10)' : 'var(--bg-input)',
+              borderLeft: `3px solid ${log.status === 'failed' ? 'var(--accent-red)' : log.status === 'success' ? 'var(--accent-green)' : log.status === 'skipped' ? 'var(--accent-amber)' : 'var(--border)'}`,
+              color: log.status === 'failed' ? 'var(--accent-red)' : log.status === 'skipped' ? 'var(--accent-amber)' : 'var(--text-body)',
+              fontFamily: 'var(--font-mono)',
+              cursor: 'default',
+            }} title={log.error || ''}>
+              <span style={{ color: 'var(--text-dim)' }}>{i + 1}.</span>{' '}
+              {log.step_id ? log.step_id.slice(-12) : '—'}{' '}
+              <span style={{ fontWeight: '600' }}>
+                {log.status === 'failed' ? '✗' : log.status === 'success' ? '✓' : log.status === 'skipped' ? '↷' : '…'}
+              </span>
+              {log.attempt > 1 && (
+                <span style={{ marginLeft: '6px', color: 'var(--text-dim)' }}>重试 {log.attempt}</span>
+              )}
+              {log.duration_ms > 0 && (
+                <span style={{ marginLeft: '6px', color: 'var(--text-dim)' }}>{log.duration_ms}ms</span>
+              )}
+              {log.error && (
+                <span style={{ display: 'block', marginLeft: '12px', color: 'var(--accent-red)', fontSize: '9px' }}>{log.error.slice(0, 120)}</span>
+              )}
+            </div>
+          ))}
+          {logsWithAttempts.length > 15 && (
+            <div style={{ fontSize: '9px', color: 'var(--text-dim)', textAlign: 'center' }}>
+              ... 还有 {(logsWithAttempts.length - 15)} 条日志
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DebugPanel({ stepLogs, execStatus, runtimeAi, variables, onBreakpointToggle, breakpoints, onStepOver, onPause, onResume, onStop }) {
+  const [activeTab, setActiveTab] = useState('logs');
+  const tabs = [
+    { key: 'logs', label: '执行日志' },
+    { key: 'ai', label: 'AI 协同' },
+    { key: 'vars', label: '变量监视' },
+    { key: 'breakpoints', label: '断点' },
+    { key: 'preview', label: '步骤预览' },
+  ];
+
+  const isRunning = execStatus?.status === 'running';
+
+  return React.createElement('div', { className: 'debug-panel', style: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '220px', background: 'var(--bg-deep)', borderTop: '2px solid var(--border)', display: 'flex', flexDirection: 'column', zIndex: 50 } },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' } },
+      React.createElement('div', { className: 'debug-tabs', style: { display: 'flex', flex: 1 } },
+        tabs.map(t => React.createElement('button', {
+          key: t.key,
+          onClick: () => setActiveTab(t.key),
+          style: { padding: '6px 14px', border: 'none', background: activeTab === t.key ? 'var(--bg-elevated)' : 'transparent', fontWeight: activeTab === t.key ? 600 : 400, cursor: 'pointer', fontSize: '12px', color: 'var(--text-body)', borderBottom: activeTab === t.key ? '2px solid var(--accent-cyan)' : 'none' },
+        }, t.label))
+      ),
+      isRunning && React.createElement('div', { style: { display: 'flex', gap: '4px', padding: '4px 8px' } },
+        onPause && React.createElement('button', { onClick: onPause, style: { padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-elevated)', cursor: 'pointer' } }, '⏸ 暂停'),
+        onStepOver && React.createElement('button', { onClick: onStepOver, style: { padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-elevated)', cursor: 'pointer' } }, '⏭ 单步'),
+        onResume && React.createElement('button', { onClick: onResume, style: { padding: '2px 8px', fontSize: '11px', border: '1px solid var(--accent-green)', borderRadius: '3px', background: 'var(--bg-elevated)', cursor: 'pointer', color: 'var(--accent-green)' } }, '▶ 继续'),
+        onStop && React.createElement('button', { onClick: onStop, style: { padding: '2px 8px', fontSize: '11px', border: '1px solid var(--accent-red)', borderRadius: '3px', background: 'var(--bg-elevated)', cursor: 'pointer', color: 'var(--accent-red)' } }, '⏹ 停止')
+      )
+    ),
+    React.createElement('div', { className: 'debug-content', style: { flex: 1, overflow: 'auto', padding: '8px', fontSize: '12px', fontFamily: 'monospace' } },
+      activeTab === 'logs' && stepLogs.map((log, i) => React.createElement('div', { key: i, style: { padding: '2px 4px', color: log.status === 'failed' ? 'var(--accent-red)' : log.status === 'success' ? 'var(--accent-green)' : 'var(--text-dim)' } },
+        `[${log.status?.toUpperCase() || 'PENDING'}] Step ${log.step_index ?? '-'}: ${log.step_type || '-'} - ${log.message || log.error || 'OK'}`
+      )),
+      activeTab === 'ai' && React.createElement('div', { style: { display: 'grid', gap: '8px' } },
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '运行态'),
+          React.createElement('div', null, `状态: ${execStatus?.status || 'idle'}`),
+          React.createElement('div', null, `当前节点: ${execStatus?.currentStepId || '—'}`),
+          React.createElement('div', null, `AI 自愈次数: ${runtimeAi?.healingCount || 0}`)
+        ),
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '最新 AI Check'),
+          React.createElement('div', { style: { color: 'var(--text-body)', whiteSpace: 'pre-wrap' } }, runtimeAi?.latestAiCheck?.summary || '暂无')
+        ),
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '最新 AI Assist'),
+          React.createElement('div', { style: { color: 'var(--text-body)', whiteSpace: 'pre-wrap' } }, runtimeAi?.latestAiAssist?.summary || '暂无')
+        ),
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '流程优化'),
+          React.createElement('div', { style: { color: 'var(--text-body)', whiteSpace: 'pre-wrap' } }, runtimeAi?.aiSummary?.optimization_items?.join('\n') || runtimeAi?.aiSummary?.warnings?.join('\n') || '执行完成后显示')
+        )
+      ),
+      activeTab === 'vars' && (Object.keys(variables || {}).length > 0
+        ? Object.entries(variables || {}).map(([k, v]) => React.createElement('div', { key: k, style: { padding: '2px 4px' } },
+            React.createElement('span', { style: { color: 'var(--accent-cyan)' } }, k), ' = ', React.createElement('span', { style: { color: 'var(--accent-green)' } }, JSON.stringify(v))
+          ))
+        : React.createElement('div', { style: { color: 'var(--text-dim)', padding: '8px' } }, '暂无变量。执行流程后变量将在此显示。')
+      ),
+      activeTab === 'breakpoints' && ((breakpoints || []).length > 0
+        ? breakpoints.map((bp, i) => React.createElement('div', { key: i, style: { padding: '4px', display: 'flex', alignItems: 'center', gap: '8px' } },
+            React.createElement('span', { style: { color: 'var(--accent-amber)' } }, '🔴'),
+            React.createElement('span', null, `Breakpoint at step: ${bp}`),
+            React.createElement('button', { onClick: () => onBreakpointToggle(bp), style: { marginLeft: 'auto', fontSize: '10px', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 6px', cursor: 'pointer', background: 'var(--bg-elevated)' } }, '移除')
+          ))
+        : React.createElement('div', { style: { color: 'var(--text-dim)', padding: '8px' } }, '暂无断点。右键点击节点可添加断点。')
+      ),
+      activeTab === 'preview' && (stepLogs.length > 0
+        ? React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px' } },
+            stepLogs.filter(l => l.screenshot).map((log, i) => React.createElement('div', { key: i, style: { border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden', cursor: 'pointer' } },
+              React.createElement('img', { src: 'data:image/png;base64,' + log.screenshot, style: { width: '100%', height: '80px', objectFit: 'cover' } }),
+              React.createElement('div', { style: { padding: '2px 4px', fontSize: '9px', color: log.status === 'success' ? 'var(--accent-green)' : log.status === 'failed' ? 'var(--accent-red)' : 'var(--text-dim)' } },
+                `${log.step_type || '?'} ${log.status === 'success' ? '✓' : log.status === 'failed' ? '✗' : '…'}`
+              )
+            ))
+          )
+        : React.createElement('div', { style: { color: 'var(--text-dim)', padding: '8px' } }, '执行流程后，步骤截图将在此预览。')
+      )
+    )
+  );
+}
+
+function App() {
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+  const [flowId, setFlowId] = useState(null);
+  const [flowName, setFlowName] = useState('未命名流程');
+  const [loadedFlow, setLoadedFlow] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [toasts, setToasts] = useState([]);
+  const [showFlowList, setShowFlowList] = useState(true);
+  const [execStatus, setExecStatus] = useState(IDLE_EXEC_STATUS);
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [stepLogs, setStepLogs] = useState([]);
+  const [debugVisible, setDebugVisible] = useState(false);
+  const [breakpoints, setBreakpoints] = useState([]);
+  const [watchedVars, setWatchedVars] = useState({});
+  const reactFlowInstance = useReactFlow();
+  const nameInputRef = useRef(null);
+  const savingRef = useRef(false);
+  const debounceTimerRef = useRef(null);
+  const executionSocketRef = useRef(null);
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isUndoRedoRef = useRef(false);
+  const renderCountRef = useRef(0);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+  const loadedFlowRef = useRef(loadedFlow);
+  loadedFlowRef.current = loadedFlow;
+  const historyIndexRef = useRef(historyIndex);
+  historyIndexRef.current = historyIndex;
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const isEmbedded = useMemo(() => {
+    try { return window.self !== window.top || (new URLSearchParams(window.location.search)).get('embedded') === '1'; }
+    catch(e) { return false; }
+  }, []);
+  const closedLoopAssessment = useMemo(() => {
+    return loadedFlow?.closed_loop_assessment || loadedFlow?.metadata?.closed_loop_assessment || null;
+  }, [loadedFlow]);
+  const closedLoopState = useMemo(() => {
+    if (!closedLoopAssessment) {
+      return { label: '待评估', className: 'draft', title: '保存并分析后可生成闭环评估' };
+    }
+    if (closedLoopAssessment.ready) {
+      return {
+        label: `闭环已认证 · ${Math.round(Number(closedLoopAssessment.score || 0) * 100)}%`,
+        className: 'active',
+        title: closedLoopAssessment.summary || '流程已通过闭环认证',
+      };
+    }
+    const blockingCount = Number(closedLoopAssessment.metrics?.blocking_issue_count || 0);
+    return {
+      label: `闭环待修复 · ${blockingCount}`,
+      className: 'archived',
+      title: closedLoopAssessment.summary || '流程未通过闭环认证',
+    };
+  }, [closedLoopAssessment]);
+
+  const closeExecutionSocket = useCallback(() => {
+    if (executionSocketRef.current) {
+      executionSocketRef.current.close();
+      executionSocketRef.current = null;
+    }
+  }, []);
+
+  const resetNodeExecutionState = useCallback(() => {
+    setNodes(nds => nds.map(n => ({
+      ...n,
+      data: {
+        ...n.data,
+        status: 'idle',
+        runtimeLabel: '',
+      },
+    })));
+  }, [setNodes]);
+
+  const setActiveExecutionNode = useCallback((stepId, currentStep, totalSteps, label = '执行中') => {
+    setNodes(nds => nds.map(n => {
+      if (n.id === stepId) {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            status: 'running',
+            runtimeLabel: totalSteps ? `${label} ${currentStep}/${totalSteps}` : label,
+          },
+        };
+      }
+      if (n.data?.status === 'running') {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            status: 'idle',
+            runtimeLabel: '',
+          },
+        };
+      }
+      return n;
+    }));
+  }, [setNodes]);
+
+  const setExecutionNodeResult = useCallback((stepId, status) => {
+    if (!stepId) return;
+    setNodes(nds => nds.map(n => n.id === stepId
+      ? {
+          ...n,
+          data: {
+            ...n.data,
+            status,
+            runtimeLabel: '',
+          },
+        }
+      : n
+    ));
+  }, [setNodes]);
+
+  useEffect(() => () => closeExecutionSocket(), [closeExecutionSocket]);
+
+  function createNodeFromStepDetail(detail, successMessage = 'AI 已创建节点') {
+    if (!detail?.stepData) return;
+
+    setShowFlowList(false);
+    const nextFlowId = flowId || loadedFlowRef.current?.id || generateFlowId();
+    const preferredFlowName = detail.flowName || '屏幕记忆草稿';
+    setFlowId(nextFlowId);
+    setFlowName(prev => (!prev || prev === '未命名流程' || prev === '新建流程' ? preferredFlowName : prev));
+    setLoadedFlow(prev => prev || createEmptyFlowShell(nextFlowId, preferredFlowName));
+
+    const nextIndex = nodesRef.current.length;
+    const position = {
+      x: 250 + (nextIndex % 4) * 320,
+      y: 100 + Math.floor(nextIndex / 4) * 160,
+    };
+
+    const stepData = {
+      ...detail.stepData,
+      metadata: {
+        ...(detail.stepData.metadata || {}),
+        position,
+      },
+    };
+
+    const newNode = {
+      id: stepData.id,
+      type: 'workflowNode',
+      position,
+      data: {
+        label: detail.label || stepData.description || STEP_TYPE_META[stepData.type]?.label || stepData.type,
+        stepType: stepData.type,
+        color: STEP_TYPE_META[stepData.type]?.color || '#8b95a5',
+        bgColor: STEP_TYPE_META[stepData.type]?.bg || 'rgba(139,149,165,0.15)',
+        stepData,
+        status: 'idle',
+      },
+    };
+
+    pushHistory();
+    setNodes(nds => [...nds, newNode]);
+    setSelectedNodeId(newNode.id);
+    addToast(successMessage, 'success');
+  }
+
+  async function createNodeFromMemory(memoryItem) {
+    if (!memoryItem) return;
+
+    if (!flowId && nodesRef.current.length === 0) {
+      await loadFlow('new');
+    }
+
+    const stepData = buildStepDataFromMemoryItem(memoryItem);
+    createNodeFromStepDetail(
+      {
+        label: memoryItem.metadata?.focused_label || memoryItem.title || stepData.description,
+        stepData,
+        flowName: '屏幕记忆草稿',
+      },
+      '已从屏幕记忆创建草稿节点'
+    );
+  }
+
+  async function createNodeFromFocusCapture(capture) {
+    if (!capture) return;
+
+    if (!flowId && nodesRef.current.length === 0) {
+      await loadFlow('new');
+    }
+
+    const stepData = buildStepDataFromFocusCapture(capture);
+    const suggestionTarget = capture?.node_suggestion?.target || {};
+    createNodeFromStepDetail(
+      {
+        label: suggestionTarget.text_contains || suggestionTarget.title || capture?.focused_label || stepData.description,
+        stepData,
+        flowName: '焦点录制草稿',
+      },
+      '已从焦点上下文创建草稿节点'
+    );
+  }
+
+  if (++renderCountRef.current > 100) {
+    return React.createElement('div', { className: 'modal-overlay' },
+      React.createElement('div', { className: 'modal' },
+        React.createElement('h3', null, '⚠️ 渲染循环检测'),
+        React.createElement('p', null, '检测到超过100次连续渲染，可能是无限循环。'),
+        React.createElement('p', { style: { color: 'var(--text-dim)', fontSize: '11px' } },
+          '请刷新页面或返回主控制台。'),
+        React.createElement('button', {
+          className: 'btn btn-primary',
+          onClick: () => { renderCountRef.current = 0; setShowFlowList(true); setNodes([]); setEdges([]); }
+        }, '重置编辑器')
+      )
+    );
+  }
+
+  useEffect(() => {
+    if (!isEmbedded) return;
+    const handler = (e) => {
+      const msg = e.data;
+      if (!msg || msg.source !== 'auto-agent-workflow') return;
+      if (msg.type === 'loadFlow' && msg.flowId) {
+        loadFlow(msg.flowId);
+      }
+      if (msg.type === 'createNodeFromMemory' && msg.memoryItem) {
+        createNodeFromMemory(msg.memoryItem);
+      }
+      if (msg.type === 'createNodeFromFocusCapture' && msg.capture) {
+        createNodeFromFocusCapture(msg.capture);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [createNodeFromFocusCapture, createNodeFromMemory, isEmbedded, loadFlow]);
+
+  useEffect(() => {
+    if (!isEmbedded) return;
+    if (flowId && flowName) {
+      window.parent.postMessage({
+        source: 'auto-agent-workflow',
+        type: 'flowChanged',
+        flowId: flowId,
+        flowName: flowName,
+      }, '*');
+    }
+  }, [flowId, flowName, isEmbedded]);
+
+  useEffect(() => {
+    if (isEmbedded && nodes.length === 0) {
+      setShowFlowList(true);
+    }
+  }, [isEmbedded]);
+
+  const selectedNode = useMemo(() => nodes.find(n => n.id === selectedNodeId) || null, [nodes, selectedNodeId]);
+
+  useEffect(() => {
+    const handleAiNodeUpdated = (event) => {
+      const updatedNode = event.detail;
+      if (!updatedNode?.id || !nodesRef.current.some(n => n.id === updatedNode.id)) return;
+      pushHistory();
+      setNodes(nds => nds.map(n => (n.id === updatedNode.id ? updatedNode : n)));
+      setSelectedNodeId(updatedNode.id);
+      addToast('AI 分析结果已回写到节点', 'success');
+    };
+
+    const handleVisionNodeCreated = (event) => {
+      const detail = event.detail;
+      if (!detail?.stepData) return;
+      createNodeFromStepDetail(detail, 'AI 已从截图创建节点');
+    };
+
+    window.addEventListener('ai-node-updated', handleAiNodeUpdated);
+    window.addEventListener('vision-node-created', handleVisionNodeCreated);
+
+    return () => {
+      window.removeEventListener('ai-node-updated', handleAiNodeUpdated);
+      window.removeEventListener('vision-node-created', handleVisionNodeCreated);
+    };
+  }, [addToast, createNodeFromStepDetail, pushHistory, setNodes]);
+
+  const addToast = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev.slice(-4), { id, message, type, exiting: false }]);
+    setTimeout(() => {
+      setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 220);
+    }, 3000);
+  }, []);
+
+  const removeToast = useCallback(id => {
+    setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 220);
+  }, []);
+
+  const dismissExecStatus = useCallback(() => {
+    closeExecutionSocket();
+    setExecStatus({ ...IDLE_EXEC_STATUS });
+    setStepLogs([]);
+    resetNodeExecutionState();
+  }, [closeExecutionSocket, resetNodeExecutionState]);
+
+  const pushHistory = useCallback(() => {
+    if (isUndoRedoRef.current) { isUndoRedoRef.current = false; return; }
+    setHistory(prev => {
+      const entry = { nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edgesRef.current)) };
+      const next = prev.slice(0, historyIndexRef.current + 1);
+      next.push(entry);
+      if (next.length > 50) next.shift();
+      return next;
+    });
+    setHistoryIndex(prev => {
+      historyIndexRef.current = prev + 1;
+      return prev + 1;
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current < 0) return;
+    if (historyIndexRef.current === 0 && historyRef.current.length <= 1) { clearCanvas(); return; }
+    isUndoRedoRef.current = true;
+    const targetIndex = historyIndexRef.current > 0 ? historyIndexRef.current : 0;
+    const entry = historyRef.current[targetIndex] || historyRef.current[historyIndexRef.current];
+    if (!entry) return;
+    setNodes(entry.nodes || []);
+    setEdges(entry.edges || []);
+    setHistoryIndex(prev => {
+      historyIndexRef.current = Math.max(-1, prev - 1);
+      return historyIndexRef.current;
+    });
+    addToast('已撤销', 'info');
+  }, [setNodes, setEdges, addToast]);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current + 1 >= historyRef.current.length) return;
+    isUndoRedoRef.current = true;
+    const entry = historyRef.current[historyIndexRef.current + 1];
+    if (!entry) return;
+    setNodes(entry.nodes || []);
+    setEdges(entry.edges || []);
+    setHistoryIndex(prev => {
+      historyIndexRef.current = prev + 1;
+      return historyIndexRef.current;
+    });
+    addToast('已重做', 'info');
+  }, [setNodes, setEdges, addToast]);
+
+  const clearCanvas = useCallback(() => {
+    setNodes([]);
+    setEdges([]);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setHistory([]);
+    setHistoryIndex(-1);
+  }, [setNodes, setEdges]);
+
+  const styledEdges = useMemo(() => {
+    return edges.map(e => ({
+      ...e,
+      style: e.id === selectedEdgeId
+        ? { stroke: '#d97706', strokeWidth: 3 }
+        : { stroke: 'var(--border)', strokeWidth: 2 },
+    }));
+  }, [edges, selectedEdgeId]);
+
+  const buildFlow = useCallback(() => {
+    return reactFlowToFlow(
+      flowId || generateFlowId(),
+      flowName || '未命名流程',
+      nodes,
+      edges,
+      loadedFlowRef.current
+    );
+  }, [nodes, edges, flowId, flowName, loadedFlow]);
+
+  const loadFlow = useCallback(async (id) => {
+    closeExecutionSocket();
+    if (id === 'new') {
+      const draftFlow = createEmptyFlowShell(generateFlowId(), '新建流程');
+      setNodes([]);
+      setEdges([]);
+      setFlowId(draftFlow.id);
+      setFlowName(draftFlow.name);
+      setLoadedFlow(draftFlow);
+      setSelectedNodeId(null);
+      setShowFlowList(false);
+      setExecStatus({ ...IDLE_EXEC_STATUS });
+      setStepLogs([]);
+      setHistory([]);
+      setHistoryIndex(-1);
+      addToast('已创建空白流程', 'success');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE}/${id}`);
+      if (!resp.ok) throw new Error('加载失败');
+      const flow = await resp.json();
+      const { nodes: loadedNodes, edges: loadedEdges } = flowToReactFlow(flow);
+
+      setNodes(loadedNodes);
+      setEdges(loadedEdges);
+      setFlowId(flow.id);
+      setFlowName(flow.name);
+      setLoadedFlow(flow);
+      setSelectedNodeId(null);
+      setShowFlowList(false);
+      setExecStatus({ ...IDLE_EXEC_STATUS });
+      setStepLogs([]);
+      setHistory([]);
+      setHistoryIndex(-1);
+      addToast(`已加载流程: ${flow.name}`, 'success');
+    } catch (e) {
+      addToast('加载流程失败: ' + e.message, 'error');
+    }
+  }, [addToast, closeExecutionSocket, setEdges, setNodes]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loadId = params.get('load');
+    if (loadId && loadId !== 'new') {
+      loadFlow(loadId);
+    }
+  }, [loadFlow]);
+
+  const saveFlow = useCallback(async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaveStatus('saving');
+
+    const flow = buildFlow();
+
+    try {
+      let resp;
+      const existingResp = await fetch(`${API_BASE}/${flow.id}`);
+      if (existingResp.ok) {
+        resp = await fetch(`${API_BASE}/${flow.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+      } else {
+        resp = await fetch(API_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+      }
+
+      if (!resp.ok) throw new Error('保存失败');
+      const saved = await resp.json();
+      if (!flowId || flowId !== saved.id) {
+        setFlowId(saved.id);
+      }
+      setLoadedFlow(saved);
+      setSaveStatus('saved');
+      addToast('流程已保存', 'success');
+      setTimeout(() => { setSaveStatus('idle'); savingRef.current = false; }, 2000);
+    } catch (e) {
+      setSaveStatus('idle');
+      savingRef.current = false;
+      addToast('保存失败: ' + e.message, 'error');
+    }
+  }, [buildFlow, flowId, addToast]);
+
+  const executeFlow = useCallback(async (dryRun = false) => {
+    const flow = buildFlow();
+    const startTime = Date.now();
+
+    try {
+      let resp;
+      if (!flow.id) {
+        resp = await fetch(API_BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+      } else {
+        resp = await fetch(`${API_BASE}/${flow.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(flow),
+        });
+      }
+      if (!resp.ok) throw new Error('保存失败');
+
+      const saved = await resp.json();
+      const execFlowId = saved.id || flow.id;
+      setFlowId(execFlowId);
+      setLoadedFlow(saved);
+      closeExecutionSocket();
+      setStepLogs([]);
+      setWatchedVars({});
+      resetNodeExecutionState();
+
+      const aiOptions = {
+        enabled: true,
+        check_enabled: true,
+        assist_enabled: true,
+        summary_enabled: true,
+        mode: 'smart',
+      };
+      const requestBody = {
+        variables: {},
+        ai_options: aiOptions,
+      };
+
+      const normalizeStepStatus = (value) => {
+        const raw = String(value || '').toLowerCase();
+        if (raw === 'success' || raw === 'completed') return 'success';
+        if (raw === 'failed' || raw === 'error') return 'failed';
+        if (raw === 'skipped') return 'skipped';
+        if (raw === 'pending') return 'pending';
+        if (raw === 'paused') return 'paused';
+        return 'running';
+      };
+
+      const normalizeFinalStatus = (value, failedSteps = 0) => {
+        const raw = String(value || '').toLowerCase();
+        if (raw === 'completed') return failedSteps > 0 ? 'partial' : 'completed';
+        if (raw === 'failed' || raw === 'aborted' || raw === 'paused' || raw === 'running' || raw === 'partial') return raw;
+        return failedSteps > 0 ? 'partial' : 'completed';
+      };
+
+      const appendRuntimeLog = (entry) => {
+        setStepLogs(prev => [...prev, entry].slice(-150));
+      };
+
+      const applyFinalRecord = (record) => {
+        const totalSteps = record?.total_steps || flow.steps.length;
+        const finalStatus = normalizeFinalStatus(record?.status, record?.failed_steps || 0);
+        const rawLogs = Array.isArray(record?.step_logs) ? record.step_logs : [];
+        const attemptsByStep = {};
+        const normalizedLogs = rawLogs.map((log, index) => {
+          const stepKey = log.step_id || `step-${index}`;
+          const attempt = (attemptsByStep[stepKey] || 0) + 1;
+          attemptsByStep[stepKey] = attempt;
+          return {
+            step_id: log.step_id || '',
+            step_index: typeof log.step_index === 'number' ? log.step_index : index,
+            step_type: log.step_type || '',
+            status: normalizeStepStatus(log.status),
+            error: log.error || log.error_message || '',
+            message: log.message || log.error || '',
+            duration_ms: log.duration_ms || 0,
+            timestamp: log.timestamp || new Date().toISOString(),
+            attempt,
+            output: log.output || null,
+            screenshot: log.screenshot_after || log.screenshot_before || null,
+          };
+        });
+
+        if (normalizedLogs.length > 0) {
+          setStepLogs(normalizedLogs);
+        }
+
+        const finalStatusByStep = new Map();
+        normalizedLogs.forEach(log => {
+          if (log.step_id && ['success', 'failed', 'skipped'].includes(log.status)) {
+            finalStatusByStep.set(log.step_id, log.status);
+          }
+        });
+        setNodes(nds => nds.map(n => ({
+          ...n,
+          data: {
+            ...n.data,
+            status: finalStatusByStep.get(n.id) || 'idle',
+            runtimeLabel: '',
+          },
+        })));
+
+        setExecStatus(prev => ({
+          ...prev,
+          status: finalStatus,
+          currentStep: record?.completed_steps || totalSteps,
+          totalSteps,
+          currentStepId: null,
+          aiSummary: record?.ai_summary || prev.aiSummary || null,
+        }));
+        setWatchedVars(record?.variables || {});
+
+        addToast(
+          finalStatus === 'completed'
+            ? `流程执行完成 (${totalSteps} 步骤, ${Date.now() - startTime}ms)`
+            : finalStatus === 'partial'
+              ? `流程部分完成 (${record?.failed_steps || 0}/${totalSteps} 步失败)`
+            : finalStatus === 'aborted'
+              ? `流程已中止 (${record?.failed_steps || 0}/${totalSteps} 失败)`
+              : `流程执行结束: ${record?.failed_steps || 0}/${totalSteps} 失败`,
+          finalStatus === 'completed' ? 'success' : finalStatus === 'partial' ? 'info' : 'error'
+        );
+      };
+
+      if (dryRun) {
+        const dryRunResp = await fetch(`${API_BASE}/${execFlowId}/dry-run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+        if (!dryRunResp.ok) {
+          const errData = await dryRunResp.json().catch(() => ({}));
+          const detail = errData?.detail;
+          const message = typeof detail === 'string'
+            ? detail
+            : detail?.message || errData?.message || '执行失败';
+          const error = new Error(message);
+          error.detail = detail;
+          throw error;
+        }
+        applyFinalRecord(await dryRunResp.json());
+        return;
+      }
+
+      setExecStatus({
+        ...IDLE_EXEC_STATUS,
+        status: 'running',
+        totalSteps: flow.steps.length,
+      });
+
+      const execResp = await fetch(`${API_BASE}/${execFlowId}/execute?async_exec=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      if (!execResp.ok) {
+        const errData = await execResp.json().catch(() => ({}));
+        const detail = errData?.detail;
+        const message = typeof detail === 'string'
+          ? detail
+          : detail?.message || errData?.message || '执行失败';
+        const error = new Error(message);
+        error.detail = detail;
+        throw error;
+      }
+
+      const { execution_id: executionId } = await execResp.json();
+      if (!executionId) {
+        throw new Error('未返回 execution_id');
+      }
+
+      setExecStatus(prev => ({ ...prev, executionId: executionId }));
+
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsUrl = `${wsProtocol}://${window.location.host}/api/executions/${executionId}/feedback`;
+
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const socket = new WebSocket(wsUrl);
+        executionSocketRef.current = socket;
+
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          if (executionSocketRef.current === socket) {
+            executionSocketRef.current = null;
+          }
+          if (error) reject(error);
+          else resolve();
+        };
+
+        socket.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === 'subscribed' || data.type === 'heartbeat') return;
+          if (data.type === 'completed') {
+            socket.close();
+            finish();
+            return;
+          }
+
+          const stepStatus = String(data.step_status || '').toLowerCase();
+          const normalizedStatus = normalizeStepStatus(stepStatus);
+          const stepId = data.step_id || null;
+          const isHealing = data.ai_assist?.phase === 'self_healing' || String(data.step_description || '').startsWith('AI 自愈尝试');
+
+          appendRuntimeLog({
+            step_id: stepId || '',
+            step_index: typeof data.current_step === 'number' ? data.current_step - 1 : null,
+            step_type: data.step_type || '',
+            status: normalizedStatus,
+            error: data.error || '',
+            message: data.step_description || '',
+            duration_ms: data.elapsed_ms || 0,
+            timestamp: new Date().toISOString(),
+            ai_check: data.ai_check || null,
+            ai_assist: data.ai_assist || null,
+          });
+
+          if (stepId) {
+            if (normalizedStatus === 'running') {
+              setActiveExecutionNode(
+                stepId,
+                data.current_step || 0,
+                data.total_steps || flow.steps.length,
+                isHealing ? '自愈中' : '执行中'
+              );
+              setSelectedNodeId(stepId);
+            } else if (['success', 'failed', 'skipped'].includes(normalizedStatus)) {
+              setExecutionNodeResult(stepId, normalizedStatus);
+            } else if (stepStatus === 'paused') {
+              setActiveExecutionNode(stepId, data.current_step || 0, data.total_steps || flow.steps.length, '等待处理');
+            }
+          }
+
+          setExecStatus(prev => ({
+            ...prev,
+            status: stepStatus === 'failed'
+              ? 'failed'
+              : stepStatus === 'paused'
+                ? 'paused'
+                : prev.status === 'failed'
+                  ? prev.status
+                  : 'running',
+            currentStep: data.current_step || prev.currentStep,
+            totalSteps: data.total_steps || prev.totalSteps,
+            currentStepId: stepId || prev.currentStepId,
+            latestAiCheck: data.ai_check || prev.latestAiCheck,
+            latestAiAssist: data.ai_assist || prev.latestAiAssist,
+            healingCount: prev.healingCount + (isHealing ? 1 : 0),
+          }));
+        };
+
+        socket.onerror = () => finish(new Error('执行反馈连接失败'));
+        socket.onclose = () => finish();
+      });
+
+      const finalResp = await fetch(`/api/executions/${executionId}`);
+      if (!finalResp.ok) {
+        throw new Error('无法读取执行结果');
+      }
+      applyFinalRecord(await finalResp.json());
+    } catch (e) {
+      closeExecutionSocket();
+      const assessment = e?.detail?.assessment;
+      if (assessment) {
+        setLoadedFlow(prev => prev ? ({
+          ...prev,
+          closed_loop_assessment: assessment,
+          metadata: {
+            ...(prev.metadata || {}),
+            closed_loop_assessment: assessment,
+            closed_loop_ready: !!assessment.ready,
+          },
+        }) : prev);
+      }
+      setStepLogs([{
+        step_id: '—',
+        status: 'failed',
+        error: e.message || 'Unknown error',
+        message: e.message || 'Unknown error',
+        duration_ms: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        attempt: 1,
+        output: null,
+      }]);
+      setExecStatus(prev => ({
+        ...prev,
+        status: 'failed',
+      }));
+      if (assessment?.summary) {
+        addToast(assessment.summary, 'warning');
+      }
+      addToast('执行失败: ' + e.message, 'error');
+    }
+  }, [addToast, buildFlow, closeExecutionSocket, resetNodeExecutionState, setActiveExecutionNode, setExecutionNodeResult]);
+
+  const onConnect = useCallback((params) => {
+    pushHistory();
+    setEdges(eds => addEdge({
+      ...params,
+      type: 'smoothstep',
+      style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+      data: { outcome: 'default' },
+    }, eds));
+  }, [setEdges]);
+
+  const onDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback((event) => {
+    event.preventDefault();
+    try {
+      const raw = event.dataTransfer.getData('application/reactflow');
+      const data = JSON.parse(raw);
+      if (!data) return;
+
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const stepData = data.stepData || createStepData(data.stepType || 'click');
+      stepData.metadata = stepData.metadata || {};
+      stepData.metadata.position = position;
+
+      const newNode = {
+        id: stepData.id || generateId(),
+        type: 'workflowNode',
+        position,
+        data: {
+          label: stepData.description || STEP_TYPE_META[data.stepType]?.label || data.stepType,
+          stepType: data.stepType,
+          color: STEP_TYPE_META[data.stepType]?.color || '#8b95a5',
+          bgColor: STEP_TYPE_META[data.stepType]?.bg || 'rgba(139,149,165,0.15)',
+          stepData: stepData,
+          status: 'idle',
+        },
+      };
+
+      pushHistory();
+      setNodes(nds => [...nds, newNode]);
+    } catch (e) {
+      console.error('Drop error:', e);
+    }
+  }, [reactFlowInstance, setNodes, pushHistory]);
+
+  const onDelete = useCallback(() => {
+    if (selectedNodeId) {
+      pushHistory();
+      setNodes(nds => nds.filter(n => n.id !== selectedNodeId));
+      setEdges(eds => eds.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
+      setSelectedNodeId(null);
+    }
+  }, [selectedNodeId, setNodes, setEdges, pushHistory]);
+
+  const onDeleteEdge = useCallback((edgeId) => {
+    pushHistory();
+    setEdges(eds => eds.filter(e => e.id !== edgeId));
+  }, [setEdges, pushHistory]);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const onNodeClick = useCallback((event, node) => {
+    setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const onEdgeClick = useCallback((event, edge) => {
+    event.stopPropagation();
+    setSelectedNodeId(null);
+    setSelectedEdgeId(edge.id);
+  }, []);
+
+  const onUpdateNode = useCallback((updatedNode) => {
+    setNodes(nds => nds.map(n => {
+      if (n.id === updatedNode.id) return updatedNode;
+      return n;
+    }));
+  }, [setNodes]);
+
+  const handleKeyDown = useCallback((event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) { redo(); } else { undo(); }
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (document.activeElement !== document.body) return;
+      if (selectedEdgeId) {
+        onDeleteEdge(selectedEdgeId);
+        setSelectedEdgeId(null);
+      } else if (selectedNodeId) {
+        onDelete();
+      }
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      event.preventDefault();
+      saveFlow();
+    }
+  }, [onDelete, saveFlow, selectedNodeId, selectedEdgeId, onDeleteEdge, undo, redo]);
+
+  const handleKeyDownRef = useRef(handleKeyDown);
+  handleKeyDownRef.current = handleKeyDown;
+
+  useEffect(() => {
+    const handler = (e) => handleKeyDownRef.current(e);
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (nodes.length === 0 || isUndoRedoRef.current) return;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      if (savingRef.current || nodes.length === 0) return;
+      saveFlow();
+    }, 5000);
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
+  }, [nodes, edges]);
+
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
+
+  const defaultEdgeOptions = useMemo(() => ({
+    type: 'smoothstep',
+    style: { stroke: '#d4d3cf', strokeWidth: 1.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#d4d3cf', width: 16, height: 16 },
+  }), []);
+
+  const nodeTypes = useMemo(() => ({ workflowNode: WorkflowNode }), []);
+
+  if (showFlowList) {
+    return (
+      <div className="modal-overlay">
+        <FlowListModal
+          onClose={() => setShowFlowList(false)}
+          onSelect={loadFlow}
+          onDelete={async (id) => {
+            try {
+              await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+              addToast('流程已删除', 'success');
+              if (flowId === id) {
+                setNodes([]);
+                setEdges([]);
+                setFlowId(generateFlowId());
+                setFlowName('新建流程');
+                setLoadedFlow(null);
+                setSelectedNodeId(null);
+                setHistory([]);
+                setHistoryIndex(-1);
+              }
+              setShowFlowList(false);
+              setTimeout(() => setShowFlowList(true), 100);
+            } catch (e) {
+              addToast('删除失败: ' + e.message, 'error');
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-container">
+      <div className="toolbar">
+        <span className="toolbar-title">FLOW</span>
+
+        {!isEmbedded && (
+          <a href="/" className="btn btn-sm" title="返回主控制台" style={{ textDecoration: 'none' }}>
+            ← 控制台
+          </a>
+        )}
+        {isEmbedded && <div className="toolbar-divider"></div>}
+
+        {isEditingName ? (
+          <input
+            ref={nameInputRef}
+            className="toolbar-flow-name"
+            value={flowName}
+            onChange={e => setFlowName(e.target.value)}
+            onBlur={() => setIsEditingName(false)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') setIsEditingName(false);
+              if (e.key === 'Escape') { setFlowName(flowName); setIsEditingName(false); }
+            }}
+            style={{ width: '300px' }}
+          />
+        ) : (
+          <span
+            className="toolbar-flow-name"
+            onClick={() => setIsEditingName(true)}
+            title="点击编辑流程名称"
+          >
+            {flowName}
+          </span>
+        )}
+        <span className={`status-badge ${closedLoopState.className}`} title={closedLoopState.title}>
+          {closedLoopState.label}
+        </span>
+
+        <div className="toolbar-divider"></div>
+
+        <div className="toolbar-group">
+          <button className="btn btn-sm" onClick={() => handleCreateFromScreenshot()} title="上传截图自动创建操作节点">
+            📸 从截图创建
+          </button>
+        </div>
+
+        <div className="toolbar-divider"></div>
+
+        <div className="toolbar-group">
+          <button className="btn btn-sm" onClick={() => setShowFlowList(true)} title="打开/新建流程">
+            📂 打开
+          </button>
+          <button
+            className={`btn btn-sm ${saveStatus === 'saving' ? '' : 'btn-primary'}`}
+            onClick={saveFlow}
+            disabled={saveStatus === 'saving'}
+            title="Ctrl+S"
+          >
+            {saveStatus === 'saving' ? '⏳ 保存中' : saveStatus === 'saved' ? '✅ 已保存' : '💾 保存'}
+          </button>
+        </div>
+
+        <div className="toolbar-divider"></div>
+
+        <div className="toolbar-group">
+          <button className="btn btn-sm btn-green" onClick={() => executeFlow(false)} title="AI 协同执行流程">
+            ▶ AI协同执行
+          </button>
+          <button className="btn btn-sm" onClick={() => executeFlow(true)} title="AI 协同预演（不实际操作）">
+            ◉ AI预演
+          </button>
+        </div>
+
+        <div className="toolbar-divider"></div>
+
+        <div className="toolbar-group">
+          <button className="btn btn-sm" onClick={async () => {
+            const flow = buildFlow();
+            try {
+              const resp = await fetch(`${API_BASE}/${flow.id}/export?format=json`, { method: 'POST' });
+              const data = await resp.json();
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `${flowName || 'flow'}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              addToast('已导出JSON', 'success');
+            } catch (e) {
+              addToast('导出失败: ' + e.message, 'error');
+            }
+          }}>📥 导出</button>
+          <button className="toolbar-btn" onClick={() => setDebugVisible(!debugVisible)} style={{ background: debugVisible ? 'var(--accent-cyan)' : undefined, color: debugVisible ? 'white' : undefined }}>🐛 调试</button>
+        </div>
+
+        <div className="toolbar-spacer"></div>
+
+        <div className="toolbar-group">
+          <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+            {nodes.length} 节点 · {edges.length} 连线
+          </span>
+        </div>
+
+        {selectedNodeId && (
+          <>
+            <div className="toolbar-divider"></div>
+            <button className="btn btn-sm btn-red" onClick={onDelete} title="Delete 键删除节点">
+              🗑 删除节点
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="workspace">
+        <NodeLibrary
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          selectedNode={selectedNode}
+        />
+
+        <div className="canvas-area">
+          <FlowCanvas
+            nodes={nodes}
+            edges={styledEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={nodeTypes}
+            fitView
+            deleteKeyCode={['Delete', 'Backspace']}
+            multiSelectionKeyCode="Shift"
+            defaultEdgeOptions={defaultEdgeOptions}
+            snapToGrid={true}
+            snapGrid={[20, 20]}
+          >
+            <Background color="#e8e7e3" gap={20} size={1} />
+            <Controls position="bottom-right" />
+            <MiniMap
+              position="bottom-left"
+              style={{ background: '#ffffff', border: '1px solid #e8e7e3' }}
+              nodeColor={(node) => node.data?.color || '#9b9b9b'}
+              maskColor="rgba(0,0,0,0.04)"
+            />
+          </FlowCanvas>
+
+          <ExecutionStatus
+            status={execStatus.status}
+            currentStep={execStatus.currentStep}
+            totalSteps={execStatus.totalSteps}
+            currentStepId={execStatus.currentStepId}
+            stepLogs={stepLogs}
+            runtimeAi={execStatus}
+            onClose={dismissExecStatus}
+          />
+        </div>
+
+        <PropertyPanel
+          selectedNode={selectedNode}
+          onUpdateNode={onUpdateNode}
+          nodes={nodes}
+        />
+      </div>
+
+      {debugVisible && React.createElement(DebugPanel, {
+        stepLogs: stepLogs,
+        execStatus: execStatus,
+        runtimeAi: execStatus,
+        variables: watchedVars,
+        breakpoints: breakpoints,
+        onBreakpointToggle: (stepId) => setBreakpoints(prev => prev.includes(stepId) ? prev.filter(b => b !== stepId) : [...prev, stepId]),
+      })}
+
+      <Toast toasts={toasts} onRemove={removeToast} />
+    </div>
+  );
+}
+
+function Root() {
+  return (
+    <ReactFlowProvider>
+      <App />
+    </ReactFlowProvider>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Root />);
+
+const API_ROOT = window.location.origin + '/api';
+
+function ensureImageDataUrl(imageValue) {
+  if (!imageValue) return '';
+  return imageValue.startsWith('data:') ? imageValue : `data:image/png;base64,${imageValue}`;
+}
+
+function getImageSize(imageValue) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({
+      width: img.naturalWidth || img.width,
+      height: img.naturalHeight || img.height,
+    });
+    img.onerror = () => reject(new Error('无法解析截图尺寸'));
+    img.src = ensureImageDataUrl(imageValue);
+  });
+}
+
+function mapVisionActionToStepType(action) {
+  switch ((action || '').toLowerCase()) {
+    case 'type':
+      return 'type';
+    case 'scroll':
+      return 'scroll';
+    case 'navigate':
+      return 'navigate';
+    case 'wait':
+      return 'wait';
+    default:
+      return 'click';
+  }
+}
+
+function inferMemoryStepType(memoryItem) {
+  const opType = (memoryItem?.operation_type || '').toLowerCase();
+  const focusedRole = (memoryItem?.metadata?.focused_role || '').toLowerCase();
+
+  if (opType === 'navigation') return 'navigate';
+  if (opType === 'key_input') return 'type';
+  if (opType === 'mouse_scroll') return 'scroll';
+  if (opType === 'mouse_drag') return 'drag';
+  if (focusedRole.includes('textbox') || focusedRole.includes('input')) return 'type';
+  if (memoryItem?.kind === 'snapshot' && memoryItem?.url && !memoryItem?.metadata?.focused_label) return 'navigate';
+  return 'click';
+}
+
+function buildStepDataFromMemoryItem(memoryItem) {
+  const stepType = inferMemoryStepType(memoryItem);
+  const base = createStepData(stepType);
+  const focusedLabel = memoryItem?.metadata?.focused_label || memoryItem?.title || null;
+
+  const stepData = {
+    ...base,
+    description: memoryItem?.kind === 'snapshot'
+      ? (focusedLabel ? `根据屏幕记忆操作 ${focusedLabel}` : (memoryItem?.title || base.description))
+      : (memoryItem?.title || base.description),
+    target: {
+      ...(base.target || {}),
+      strategy: 'text_match',
+      title: focusedLabel,
+      text_contains: focusedLabel || memoryItem?.window_title || memoryItem?.title || null,
+      selector: memoryItem?.metadata?.focused_selector || null,
+      xpath: memoryItem?.metadata?.focused_xpath || null,
+      url: memoryItem?.url || null,
+      bounds: memoryItem?.metadata?.focused_bounds || null,
+    },
+    metadata: {
+      ...(base.metadata || {}),
+      memory_source: 'timeline',
+      memory_item_id: memoryItem?.id || null,
+      memory_kind: memoryItem?.kind || null,
+      memory_timestamp: memoryItem?.timestamp || null,
+      memory_summary: memoryItem?.summary || '',
+      memory_score: memoryItem?.score || 0,
+      memory_preview_url: memoryItem?.preview_url || null,
+      memory_session_id: memoryItem?.session_id || null,
+      memory_url: memoryItem?.url || null,
+    },
+  };
+
+  if (stepType === 'navigate' && memoryItem?.url) {
+    stepData.action = {
+      ...(base.action || {}),
+      url: memoryItem.url,
+      wait_strategy: 'load',
+    };
+  }
+
+  if (stepType === 'type') {
+    stepData.action = {
+      ...(base.action || {}),
+      text: memoryItem?.metadata?.input_text || '',
+      clear_first: false,
+    };
+  }
+
+  if (stepType === 'scroll') {
+    const direction = (memoryItem?.metadata?.mouse_action || '').includes('up') ? 'up' : 'down';
+    stepData.action = {
+      ...(base.action || {}),
+      direction,
+    };
+  }
+
+  return applyLocatorSafety(stepData, {
+    confidence: Number(memoryItem?.score || 0),
+    confidenceReason: '时间线记忆节点默认缺少稳定定位器，建议执行前先确认目标元素。',
+  });
+}
+
+function normalizeCaptureStepType(stepType) {
+  return STEP_TYPE_META[stepType] ? stepType : 'click';
+}
+
+function deriveLocatorSafety(target, options = {}) {
+  const strategy = String(target?.strategy || 'position').toLowerCase();
+  const confidence = Number(options.confidence || 0);
+  const reason = String(options.confidenceReason || '').trim();
+  const riskFlags = Array.isArray(options.riskFlags) ? options.riskFlags.filter(Boolean) : [];
+  const hasStableLocator = Boolean(target?.accessibility_id || target?.selector || target?.xpath);
+  const hasTextHint = Boolean(String(target?.text_contains || target?.title || '').trim());
+
+  let stability = hasStableLocator ? 'high' : (strategy === 'text_match' && hasTextHint ? 'medium' : 'low');
+  let requiresConfirmation = false;
+
+  if (!hasStableLocator) {
+    if (strategy === 'position' || strategy === 'image_match') {
+      requiresConfirmation = true;
+    } else if (strategy === 'text_match') {
+      requiresConfirmation = confidence < 0.82 || riskFlags.length > 0 || !hasTextHint;
+    }
+  }
+
+  if (requiresConfirmation) {
+    stability = 'low';
+  }
+
+  return {
+    confidence,
+    confidenceReason: reason,
+    riskFlags,
+    stability,
+    requiresConfirmation,
+    confirmed: !requiresConfirmation,
+  };
+}
+
+function applyLocatorSafety(stepData, options = {}) {
+  if (!stepData) return stepData;
+
+  const existingMeta = stepData.metadata || {};
+  const existingConfirmed = existingMeta.locator_confirmed === true;
+  const safety = deriveLocatorSafety(stepData.target || {}, options);
+
+  stepData.metadata = {
+    ...existingMeta,
+    locator_confidence: safety.confidence,
+    locator_confidence_reason: safety.confidenceReason || existingMeta.locator_confidence_reason || '',
+    locator_risk_flags: safety.riskFlags.length > 0 ? safety.riskFlags : (existingMeta.locator_risk_flags || []),
+    locator_stability: existingConfirmed ? 'confirmed' : safety.stability,
+    locator_requires_confirmation: existingConfirmed ? false : safety.requiresConfirmation,
+    locator_confirmed: existingConfirmed ? true : safety.confirmed,
+    locator_strategy: (stepData.target || {}).strategy || 'position',
+  };
+
+  if (!existingConfirmed && safety.requiresConfirmation) {
+    stepData.on_error = 'ask_user';
+    stepData.retry_count = 0;
+  }
+
+  return stepData;
+}
+
+function buildStepDataFromFocusCapture(capture) {
+  const suggestion = capture?.node_suggestion || {};
+  const target = suggestion.target || {};
+  const vision = capture?.vision || {};
+  const visionElement = target.vision_element || (vision.actionable_elements || [])[0] || null;
+  const stepType = normalizeCaptureStepType(suggestion.step_type || 'click');
+  const base = createStepData(stepType);
+  const targetLabel = target.text_contains || target.title || visionElement?.label || capture?.focused_label || null;
+  const mergedTarget = {
+    ...(base.target || {}),
+    strategy: target.strategy || base.target?.strategy || 'position',
+    accessibility_id: target.accessibility_id || null,
+    title: target.title || targetLabel,
+    text_contains: target.text_contains || targetLabel,
+    role: target.role || visionElement?.element_type || null,
+    class_name: target.class_name || null,
+    selector: target.selector || null,
+    xpath: target.xpath || null,
+    url: target.url || null,
+    frame: target.frame || null,
+    position: target.position || null,
+    window_title: target.window_title || vision.window_title || capture?.window_label || null,
+    bounds: target.bounds || visionElement?.bounds || null,
+  };
+
+  const stepData = {
+    ...base,
+    description: suggestion.description || targetLabel || vision.user_intent || base.description,
+    target: mergedTarget,
+    metadata: {
+      ...(base.metadata || {}),
+      focus_capture_source: 'focus_context',
+      focus_capture_session_id: capture?.session_id || null,
+      focus_capture_snapshot_id: capture?.snapshot_id || null,
+      focus_capture_window_label: capture?.window_label || '',
+      focus_capture_focused_label: capture?.focused_label || '',
+      focus_capture_summary: capture?.focus_summary || '',
+      focus_capture_guidance: capture?.recording_guidance || '',
+      focus_capture_vision_source: vision?.source || null,
+      focus_capture_vision_confidence: vision?.confidence || 0,
+      focus_capture_node_confidence: suggestion?.confidence || 0,
+      focus_capture_preconditions: suggestion?.preconditions || [],
+      focus_capture_postconditions: suggestion?.postconditions || [],
+      focus_capture_variables: suggestion?.variables || [],
+      focus_capture_risk_flags: suggestion?.risk_flags || [],
+      focus_capture_target: target,
+      focus_capture_ocr_preview: capture?.ocr?.text_preview || '',
+    },
+    ai_analysis: {
+      ui_state: vision?.ui_state_description || capture?.focus_summary || '',
+      intent: vision?.user_intent || '',
+      confidence: Number.isFinite(Number(vision?.confidence)) ? Number(vision.confidence) : 0,
+      suggested_next_actions: vision?.suggested_next_actions || [],
+      risk: (suggestion?.risk_flags || [])[0] || '',
+      timestamp: Date.now(),
+    },
+  };
+
+  if (stepType === 'type') {
+    stepData.action = {
+      ...(base.action || {}),
+      text: '',
+      clear_first: false,
+    };
+  }
+
+  if (stepType === 'navigate' && mergedTarget.url) {
+    stepData.action = {
+      ...(base.action || {}),
+      url: mergedTarget.url,
+      wait_strategy: 'load',
+    };
+  }
+
+  return applyLocatorSafety(stepData, {
+    confidence: Number(suggestion?.confidence || 0),
+    confidenceReason: suggestion?.confidence_reason || '',
+    riskFlags: suggestion?.risk_flags || [],
+  });
+}
+
+function normalizeVisionBBox(bbox, imageSize) {
+  if (!Array.isArray(bbox) || bbox.length < 4 || !imageSize?.width || !imageSize?.height) {
+    return null;
+  }
+
+  const [centerX, centerY, width, height] = bbox.map(value => Number(value));
+  if ([centerX, centerY, width, height].some(value => Number.isNaN(value))) {
+    return null;
+  }
+
+  const px = Math.round((centerX / 1000) * imageSize.width);
+  const py = Math.round((centerY / 1000) * imageSize.height);
+  const pixelWidth = Math.max(1, Math.round((width / 1000) * imageSize.width));
+  const pixelHeight = Math.max(1, Math.round((height / 1000) * imageSize.height));
+
+  return {
+    position: { x: px, y: py },
+    bounds: {
+      x: Math.max(0, Math.round(px - pixelWidth / 2)),
+      y: Math.max(0, Math.round(py - pixelHeight / 2)),
+      width: pixelWidth,
+      height: pixelHeight,
+    },
+  };
+}
+
+function handleCreateFromScreenshot() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target.result.split(',')[1];
+      try {
+        const imageSize = await getImageSize(base64).catch(() => null);
+        const res = await fetch(API_ROOT + '/vision/analyze-screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: base64 }),
+        });
+        if (!res.ok) { alert('Vision analysis failed: ' + res.status); return; }
+        const data = await res.json();
+        const elements = data.actionable_elements || [];
+        if (elements.length > 0) {
+          const el = elements.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
+          const stepType = mapVisionActionToStepType(el.suggested_action);
+          const bestTarget = normalizeVisionBBox(el.bbox, imageSize);
+          const stepData = {
+            ...createStepData(stepType),
+            description: el.label || data.user_intent || STEP_TYPE_META[stepType]?.label || stepType,
+            screenshot: base64,
+            target: {
+              ...(createStepData(stepType).target || {}),
+              strategy: bestTarget ? 'position' : 'text_match',
+              position: bestTarget?.position || null,
+              bounds: bestTarget?.bounds || null,
+              title: el.label || null,
+              text_contains: el.label || null,
+            },
+            metadata: {
+              vision_source: 'uploaded_screenshot',
+              ai_confidence: el.confidence || data.confidence || 0,
+            },
+            ai_analysis: {
+              ui_state: data.ui_state_description || '',
+              intent: data.user_intent || '',
+              suggested_next_actions: data.suggested_next_actions || [],
+              timestamp: Date.now(),
+            },
+          };
+
+          applyLocatorSafety(stepData, {
+            confidence: Number(el.confidence || data.confidence || 0),
+            confidenceReason: '截图识别节点依赖视觉推断，建议执行前先确认目标元素。',
+          });
+
+          window.dispatchEvent(new CustomEvent('vision-node-created', {
+            detail: {
+              label: el.label || el.element_type,
+              stepData,
+            },
+          }));
+          showToast('AI 已从截图识别 ' + elements.length + ' 个元素，并创建节点', 'success');
+        } else {
+          alert('No actionable elements found in screenshot');
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+async function analyzeNodeWithVision(node) {
+  if (!node) {
+    alert('请先选择一个节点。');
+    return;
+  }
+
+  const stepData = node.data?.stepData || {};
+  const screenshot = stepData.screenshot || node.data?.screenshotBase64;
+  if (!screenshot) {
+    alert('此节点没有关联的截图。请先从截图创建节点。');
+    return;
+  }
+  try {
+    const imageSize = await getImageSize(screenshot).catch(() => null);
+    const res = await fetch(API_ROOT + '/vision/analyze-screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: screenshot, task_description: stepData.description || '' }),
+    });
+    if (!res.ok) { alert('Analysis failed: ' + res.status); return; }
+    const data = await res.json();
+
+    const elements = data.actionable_elements || [];
+    let bestEl = null;
+    if (elements.length > 0) {
+      bestEl = elements.sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
+    }
+
+    const updatedStepData = {
+      ...stepData,
+      ai_analysis: {
+        ui_state: data.ui_state_description || '',
+        intent: data.user_intent || '',
+        confidence: data.confidence || 0,
+        suggested_next_actions: data.suggested_next_actions || [],
+        timestamp: Date.now(),
+      },
+    };
+
+    if (bestEl) {
+      const bestTarget = normalizeVisionBBox(bestEl.bbox, imageSize);
+      updatedStepData.action = {
+        ...(stepData.action || {}),
+      };
+
+      updatedStepData.target = {
+        ...(stepData.target || {}),
+        strategy: bestTarget ? 'position' : ((stepData.target || {}).strategy || 'text_match'),
+        position: bestTarget?.position || (stepData.target || {}).position || null,
+        bounds: bestTarget?.bounds || (stepData.target || {}).bounds || null,
+        title: bestEl.label || (stepData.target || {}).title || null,
+        text_contains: bestEl.label || (stepData.target || {}).text_contains || null,
+        expected_attributes: {
+          ...((stepData.target || {}).expected_attributes || {}),
+          ai_label: bestEl.label || '',
+          ai_element_type: bestEl.element_type || '',
+        },
+      };
+
+      if (bestEl.label) {
+        updatedStepData.description = bestEl.label;
+      }
+
+      updatedStepData.metadata = {
+        ...(stepData.metadata || {}),
+        ai_confidence: bestEl.confidence || 0,
+        ai_suggested_action: bestEl.suggested_action || '',
+      }
+    }
+
+    applyLocatorSafety(updatedStepData, {
+      confidence: Number(bestEl?.confidence || data.confidence || 0),
+      confidenceReason: 'AI 重新分析后的定位仍建议在执行前确认目标元素。',
+    });
+
+    const newLabel = bestEl ? (bestEl.label || stepData.type || 'click') : (data.user_intent || 'AI分析后节点');
+    const updatedNode = {
+      ...node,
+      data: {
+        ...node.data,
+        label: newLabel,
+        stepData: updatedStepData,
+      },
+    };
+
+    window._aiUpdatedNode = updatedNode;
+    window.dispatchEvent(new CustomEvent('ai-node-updated', { detail: updatedNode }));
+    showToast(`AI分析完成: ${elements.length} 个元素, 最佳匹配: ${bestEl ? (bestEl.label || bestEl.element_type) : 'N/A'}`, 'success');
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+function showToast(message, type) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `position:fixed;top:20px;right:20px;padding:10px 20px;border-radius:8px;font-size:13px;z-index:9999;color:#fff;${type==='success'?'background:#10b981':type==='error'?'background:#ef4444':'background:#3b82f6'}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+</script>
+</body>
+</html>
