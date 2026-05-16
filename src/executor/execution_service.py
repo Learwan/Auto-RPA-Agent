@@ -78,7 +78,9 @@ class ExecutionService:
         execution_id = str(uuid.uuid4())
         adapter = self._resolve_adapter(flow)
         self._execution_adapters[execution_id] = adapter
-        locator = ElementLocator(adapter)
+        grounding = self._create_grounding_engine()
+        locator = ElementLocator(adapter, grounding_engine=grounding)
+        locator = self._wrap_with_self_healing(locator, adapter)
         step_executor = StepExecutor(locator, adapter)
         advisor = ExecutionAdvisor(self._normalize_ai_options(ai_options))
         error_handler = ErrorHandler(
@@ -136,7 +138,9 @@ class ExecutionService:
         execution_id = str(uuid.uuid4())
         adapter = self._resolve_adapter(flow)
         self._execution_adapters[execution_id] = adapter
-        locator = ElementLocator(adapter)
+        grounding = self._create_grounding_engine()
+        locator = ElementLocator(adapter, grounding_engine=grounding)
+        locator = self._wrap_with_self_healing(locator, adapter)
         step_executor = StepExecutor(locator, adapter)
         advisor = ExecutionAdvisor(self._normalize_ai_options(ai_options))
         error_handler = ErrorHandler(
@@ -288,6 +292,28 @@ class ExecutionService:
         for q in queues:
             with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(feedback)
+
+    @staticmethod
+    def _create_grounding_engine():
+        try:
+            from src.llm.gui_grounding import GUIGroundingEngine
+
+            return GUIGroundingEngine()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _wrap_with_self_healing(locator, adapter):
+        try:
+            from src.executor.self_healing import SelfHealingLocator
+            from src.llm.service import LLMService
+
+            llm = LLMService()
+            if llm.is_configured:
+                return SelfHealingLocator(locator, adapter, llm_service=llm)
+        except Exception:
+            pass
+        return locator
 
     def _resolve_adapter(self, flow: AutomationFlow) -> BasePlatformAdapter:
         if self._adapter_override is not None:
