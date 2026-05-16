@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import time
 
@@ -33,6 +34,23 @@ HEALING_STRATEGY_CHAIN = [
     LocateStrategy.IMAGE_ANCHOR,
     LocateStrategy.POSITION,
 ]
+
+# Self-healing must not, by default, degrade to a naked pixel coordinate.
+# That is the exact "fragile node" behaviour the closed-loop contract
+# forbids.  Use ``AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1`` to bring it back
+# when truly needed.
+SAFE_HEALING_STRATEGY_CHAIN = [
+    s for s in HEALING_STRATEGY_CHAIN if s != LocateStrategy.POSITION
+]
+
+
+def _coord_fallback_allowed() -> bool:
+    return os.environ.get("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 class StrategyConfidence:
@@ -225,7 +243,12 @@ class ElementLocator:
             if healed:
                 return healed
 
-        for strategy in HEALING_STRATEGY_CHAIN:
+        healing_chain = (
+            HEALING_STRATEGY_CHAIN
+            if _coord_fallback_allowed()
+            else SAFE_HEALING_STRATEGY_CHAIN
+        )
+        for strategy in healing_chain:
             result = await self._try_strategy(strategy, target)
             if result:
                 result.confidence *= 0.8
@@ -325,11 +348,17 @@ class ElementLocator:
             if target.position:
                 strategies.append(LocateStrategy.POSITION)
 
-        fallback_strategies = [
-            s
-            for s in HEALING_STRATEGY_CHAIN
-            if s not in strategies
-        ]
+        # Closed-loop guarantee: do NOT silently add raw POSITION as a
+        # fallback after a stable strategy was explicitly chosen.  The
+        # operator must either pick POSITION on purpose or opt in via
+        # ``AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1``.
+        explicit_position = target.strategy == LocateStrategy.POSITION
+        healing_chain = (
+            HEALING_STRATEGY_CHAIN
+            if (_coord_fallback_allowed() or explicit_position)
+            else SAFE_HEALING_STRATEGY_CHAIN
+        )
+        fallback_strategies = [s for s in healing_chain if s not in strategies]
 
         strategies.extend(fallback_strategies)
         return strategies

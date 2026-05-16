@@ -38,7 +38,11 @@ htmlcov/
 .coverage
 coverage.xml
 
-# Models (large binary files)
+# Models (large binary AI model artifacts at the repo root only).
+# IMPORTANT: do NOT use a bare `models/` pattern here — it would also ignore
+# `src/models/` (the Pydantic data-model package), and that has historically
+# broken the entire closed loop because none of those modules were ever
+# committed. Anchor the rule at the repo root with a leading slash.
 /models/
 
 # IDE

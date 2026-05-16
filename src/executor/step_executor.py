@@ -6,6 +6,8 @@ import re
 import time
 import uuid
 
+import os
+
 import pyautogui
 
 from src.executor.element_locator import ElementLocator, LocatedElement
@@ -16,6 +18,24 @@ from src.models.execution import ExecutionStepLog, StepStatus, VerificationLevel
 from src.platform.base import BasePlatformAdapter
 
 pyautogui.FAILSAFE = False
+
+
+def _coord_fallback_allowed() -> bool:
+    """Allow naked (x, y) fallback only when explicitly opted in.
+
+    The user-facing contract is "no fragile nodes such as hard coordinates".
+    By default we therefore refuse to fall back to a literal pixel coordinate
+    when no element could be located.  The escape hatch is the env var
+    ``AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1`` for niche scenarios where
+    coordinate-only execution is the only option (e.g. dragging into an
+    immutable canvas region).
+    """
+    return os.environ.get("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +191,16 @@ class StepExecutor:
                 confirmation_reason = (step.metadata or {}).get(
                     "locator_confirmation_reason"
                 ) or "录制阶段目标定位仍不确定"
+                # Refuse to auto-execute an unconfirmed step in the closed
+                # loop unless the operator explicitly opts in.  This is the
+                # runtime mirror of ``FlowClosureAssessor`` and prevents
+                # silently degrading to a fragile path.
+                if not _coord_fallback_allowed():
+                    raise RuntimeError(
+                        f"拒绝执行：步骤定位尚未确认（原因：{confirmation_reason}）。"
+                        "请在流程编辑器中确认目标元素后再执行，或设置环境变量 "
+                        "AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1 临时放行。"
+                    )
                 logger.warning(
                     "Proceeding with unconfirmed locator for step %s (%s): %s",
                     step.id,
@@ -375,13 +405,31 @@ class StepExecutor:
         fallback_position = None
         located = await self._locator.locate(step.target)
         if not located or not located.center:
-            if step.target and step.target.strategy == LocateStrategy.POSITION and step.target.position:
-                x, y = step.target.position.x, step.target.position.y
+            target = step.target
+            if (
+                target
+                and target.strategy == LocateStrategy.POSITION
+                and target.position
+                and _coord_fallback_allowed()
+            ):
+                x, y = target.position.x, target.position.y
                 if not await self._safety.check_coordinate_safety(x, y):
                     raise RuntimeError(f"安全控制：目标坐标 ({x}, {y}) 超出屏幕安全范围")
                 if not self._safety.check_random_click_pattern(x, y):
                     raise RuntimeError("安全控制：检测到随机点击模式，操作已中止")
                 fallback_position = (x, y)
+            elif (
+                target
+                and target.strategy == LocateStrategy.POSITION
+                and target.position
+            ):
+                # Refuse naked coordinate execution by default — this is the
+                # core anti-fragility guarantee of the closed loop.
+                raise RuntimeError(
+                    "拒绝执行：步骤仅依赖硬坐标定位，未找到稳定元素。请重新录制或为该步骤补"
+                    "充 accessibility_id / selector / xpath 等稳定锚点。如确需允许，请设置环境变量 "
+                    "AUTO_AGENT_ALLOW_COORDINATE_FALLBACK=1 后重试。"
+                )
             else:
                 raise RuntimeError(f"Cannot locate click target: {step.target}")
 

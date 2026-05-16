@@ -214,6 +214,36 @@ class TestElementLocatorVerify:
         assert result is False
 
 
+class TestSafeHealing:
+    @pytest.mark.asyncio
+    async def test_self_healing_does_not_fall_back_to_position_by_default(self, locator, mock_adapter, monkeypatch):
+        """Closed-loop contract: self-healing must not degrade to hard coordinates."""
+        monkeypatch.delenv("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", raising=False)
+        mock_adapter.find_element = AsyncMock(return_value=None)
+
+        target = StepTarget(
+            strategy=LocateStrategy.ACCESSIBILITY_ID,
+            accessibility_id="btn-missing",
+            position=Point(x=100, y=100),
+        )
+        result = await locator.locate(target)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_self_healing_allows_position_with_explicit_opt_in(self, locator, mock_adapter, monkeypatch):
+        monkeypatch.setenv("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", "1")
+        mock_adapter.find_element = AsyncMock(return_value=None)
+
+        target = StepTarget(
+            strategy=LocateStrategy.ACCESSIBILITY_ID,
+            accessibility_id="btn-missing",
+            position=Point(x=100, y=100),
+        )
+        result = await locator.locate(target)
+        assert result is not None
+        assert result.strategy_used == LocateStrategy.POSITION
+
+
 class TestLocatedElement:
     def test_center_from_bounds(self):
         element = UIElement(
