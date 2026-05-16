@@ -117,6 +117,10 @@ class Settings(BaseSettings):
         default=900,
         validation_alias=AliasChoices("AUTO_AGENT_WEB_VIEWPORT_HEIGHT", "WEB_VIEWPORT_HEIGHT"),
     )
+    WEB_USE_MCP: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("AUTO_AGENT_WEB_USE_MCP", "WEB_USE_MCP"),
+    )
 
     ANALYZE_MIN_SUPPORT: int = 2
     ANALYZE_MIN_PATTERN_LENGTH: int = 3
