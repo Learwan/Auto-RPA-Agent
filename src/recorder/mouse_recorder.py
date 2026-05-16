@@ -277,7 +277,19 @@ class MouseRecorder(BaseRecorder):
 
             context = self._build_context(x, y, element)
             self._emit(MouseEventData(x=x, y=y, button=btn, action=action), OperationType.MOUSE_CLICK, context)
+            self._schedule_anchor_capture(x, y)
             self._last_press_pos = None
+
+    def _schedule_anchor_capture(self, x: int, y: int) -> None:
+        if not self._adapter or not self._loop:
+            return
+        try:
+            from src.recorder.image_anchor import ImageAnchorCapture
+
+            capture = ImageAnchorCapture(adapter=self._adapter)
+            asyncio.run_coroutine_threadsafe(capture.capture_anchor(x, y), self._loop)
+        except Exception as e:
+            logger.debug("Image anchor capture scheduling failed: %s", e)
 
     def _on_scroll(self, x, y, dx, dy):
         if not self._running:

@@ -40,6 +40,7 @@ class LocateStrategy(str, Enum):
     XPATH = "xpath"
     IMAGE = "image"
     IMAGE_MATCH = "image_match"
+    IMAGE_ANCHOR = "image_anchor"
     OCR = "ocr"
     COORDINATE = "coordinate"
 
