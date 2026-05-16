@@ -20,6 +20,7 @@ STRATEGY_CONFIDENCE = {
     LocateStrategy.XPATH: 0.85,
     LocateStrategy.TEXT_MATCH: 0.75,
     LocateStrategy.IMAGE_MATCH: 0.70,
+    LocateStrategy.IMAGE_ANCHOR: 0.72,
     LocateStrategy.POSITION: 0.40,
 }
 
@@ -29,6 +30,7 @@ HEALING_STRATEGY_CHAIN = [
     LocateStrategy.XPATH,
     LocateStrategy.TEXT_MATCH,
     LocateStrategy.IMAGE_MATCH,
+    LocateStrategy.IMAGE_ANCHOR,
     LocateStrategy.POSITION,
 ]
 
@@ -211,6 +213,14 @@ class ElementLocator:
 
     async def _self_healing_locate(self, target: StepTarget) -> LocatedElement | None:
         if self._grounding_engine is not None:
+            from src.executor.vision_locator import VisionLocator
+
+            vision = VisionLocator(self._adapter, self._grounding_engine)
+            vision_result = await vision.locate(target)
+            if vision_result:
+                logger.info("VisionLocator healed location for target")
+                return vision_result
+
             healed = await self._visual_grounding_heal(target)
             if healed:
                 return healed
@@ -243,8 +253,9 @@ class ElementLocator:
             )
 
             if result and result.found and result.confidence >= 0.5:
-                center_x = int(result.center_x) if hasattr(result, "center_x") else 0
-                center_y = int(result.center_y) if hasattr(result, "center_y") else 0
+                bbox = getattr(result, "bbox_pixel", None)
+                center_x = int(bbox[0]) if bbox and len(bbox) >= 2 else 0
+                center_y = int(bbox[1]) if bbox and len(bbox) >= 2 else 0
 
                 if center_x > 0 and center_y > 0:
                     element = UIElement(
@@ -295,6 +306,8 @@ class ElementLocator:
             strategies.append(LocateStrategy.XPATH)
         if target.strategy == LocateStrategy.IMAGE_MATCH and target.image_path:
             strategies.append(LocateStrategy.IMAGE_MATCH)
+        if target.strategy == LocateStrategy.IMAGE_ANCHOR and target.image_path:
+            strategies.append(LocateStrategy.IMAGE_ANCHOR)
         if target.strategy == LocateStrategy.POSITION and target.position:
             strategies.append(LocateStrategy.POSITION)
 
@@ -333,6 +346,8 @@ class ElementLocator:
                 return await self._locate_by_xpath(target)
             elif strategy == LocateStrategy.IMAGE_MATCH:
                 return await self._locate_by_image(target)
+            elif strategy == LocateStrategy.IMAGE_ANCHOR:
+                return await self._locate_by_image_anchor(target)
             elif strategy == LocateStrategy.POSITION:
                 return await self._locate_by_position(target)
         except Exception as e:
@@ -464,6 +479,39 @@ class ElementLocator:
             logger.debug("PIL/numpy not available for image matching")
         except Exception as e:
             logger.debug(f"Image matching failed: {e}")
+        return None
+
+    async def _locate_by_image_anchor(self, target: StepTarget) -> LocatedElement | None:
+        if not target.image_path:
+            return None
+        try:
+            from src.recorder.image_anchor import ImageAnchorCapture
+
+            screenshot_bytes = await self._adapter.capture_screen()
+            if not screenshot_bytes:
+                return None
+
+            match = await ImageAnchorCapture.match_anchor(
+                screenshot_bytes, target.image_path, threshold=IMAGE_MATCH_CONFIDENCE
+            )
+            if match:
+                center_x, center_y = match
+                element = UIElement(
+                    role="image_anchor",
+                    title=f"Image anchor: {target.image_path}",
+                    bounds=None,
+                )
+                confidence = self._strategy_confidence.get_confidence(LocateStrategy.IMAGE_ANCHOR)
+                return LocatedElement(
+                    element,
+                    LocateStrategy.IMAGE_ANCHOR,
+                    position=Point(x=center_x, y=center_y),
+                    confidence=confidence,
+                )
+        except ImportError:
+            logger.debug("PIL/numpy not available for image anchor matching")
+        except Exception as e:
+            logger.debug(f"Image anchor matching failed: {e}")
         return None
 
     async def _locate_by_position(self, target: StepTarget) -> LocatedElement | None:

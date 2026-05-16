@@ -1,10 +1,14 @@
 import asyncio
 import hashlib
+import logging
+import platform
 import time
 import uuid
 
 from src.models.operation import ClipboardEventData, ClipboardType, OperationContext, OperationEvent, OperationType
 from src.recorder.base import BaseRecorder
+
+logger = logging.getLogger(__name__)
 
 SENSITIVE_KEYWORDS = ("password", "passwd", "secret", "token", "api_key", "apikey", "credential", "private_key")
 MAX_PREVIEW_LENGTH = 200
@@ -18,12 +22,14 @@ class ClipboardRecorder(BaseRecorder):
         self._seq_num = 0
         self._last_content_hash: str = ""
         self._poll_task: asyncio.Task | None = None
+        self._consecutive_errors = 0
 
     def start(self, session_id: str, callback) -> None:
         self._session_id = session_id
         self._callback = callback
         self._seq_num = 0
         self._last_content_hash = ""
+        self._consecutive_errors = 0
         self._running = True
         self._poll_task = asyncio.ensure_future(self._poll_loop())
 
@@ -43,6 +49,7 @@ class ClipboardRecorder(BaseRecorder):
                 content = await self._read_clipboard()
                 if content is None:
                     continue
+                self._consecutive_errors = 0
                 content_hash = self._hash_content(content)
                 if content_hash == self._last_content_hash:
                     continue
@@ -50,23 +57,36 @@ class ClipboardRecorder(BaseRecorder):
                 self._emit_clipboard_event(content, content_hash)
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as e:
+                self._consecutive_errors += 1
+                if self._consecutive_errors == 1:
+                    logger.warning(f"ClipboardRecorder: clipboard read failed: {e}")
+                elif self._consecutive_errors == 5:
+                    logger.warning(
+                        "ClipboardRecorder: clipboard read has failed 5 consecutive times. "
+                        "Clipboard events will likely NOT be captured. "
+                        "On Linux, ensure xclip or xsel is installed and a display server is running."
+                    )
                 continue
 
     async def _read_clipboard(self) -> str | None:
-        try:
-            import subprocess
+        system = platform.system().lower()
 
-            result = subprocess.run(
-                ["pbcopy", "-help"] if False else ["osascript", "-e", "the clipboard as text"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+        if system == "darwin":
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    ["osascript", "-e", "the clipboard as text"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
         try:
             import pyperclip
 

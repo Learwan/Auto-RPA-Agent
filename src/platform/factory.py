@@ -46,6 +46,13 @@ def is_web_flow(flow) -> bool:
 
 def create_adapter_for_flow(flow) -> BasePlatformAdapter:
     if is_web_flow(flow):
+        from src.config import settings
+
+        if getattr(settings, "WEB_USE_MCP", False):
+            from src.platform.web.mcp_adapter import PlaywrightMCPAdapter
+
+            return PlaywrightMCPAdapter()
+
         from src.platform.web.adapter import WebAdapter
 
         return WebAdapter()

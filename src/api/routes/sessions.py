@@ -139,6 +139,64 @@ async def stop_recording(session_id: str):
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.get("/diagnostics/recorder-health")
+async def recorder_diagnostics():
+    """Check recording environment health: display server, system tools, and recorder readiness."""
+    import os
+    import platform as platmod
+    import shutil
+
+    system = platmod.system().lower()
+    display = os.environ.get("DISPLAY", "")
+    wayland = os.environ.get("WAYLAND_DISPLAY", "")
+    has_display = bool(display or wayland)
+
+    tools = {}
+    for tool in ("wmctrl", "xdotool", "xprop", "xclip", "xsel"):
+        tools[tool] = shutil.which(tool) is not None
+
+    from src.config import settings
+
+    recorder_config = {
+        "mouse": settings.RECORD_ENABLE_MOUSE,
+        "keyboard": settings.RECORD_ENABLE_KEYBOARD,
+        "window": settings.RECORD_ENABLE_WINDOW,
+        "clipboard": settings.RECORD_ENABLE_CLIPBOARD,
+        "filesystem": settings.RECORD_ENABLE_FILESYSTEM,
+    }
+
+    issues = []
+    if system == "linux" and not has_display:
+        issues.append(
+            "No display server detected (DISPLAY and WAYLAND_DISPLAY are unset). "
+            "Mouse, keyboard, window, and clipboard recording will NOT work. "
+            "Either run in a graphical environment or use mode=web for browser recording."
+        )
+    if system == "linux" and not tools.get("wmctrl"):
+        issues.append("wmctrl not installed — window list/switch recording will not work.")
+    if system == "linux" and not tools.get("xdotool") and not tools.get("xprop"):
+        issues.append("Neither xdotool nor xprop installed — active window detection will not work.")
+    if system == "linux" and not tools.get("xclip") and not tools.get("xsel"):
+        issues.append("Neither xclip nor xsel installed — clipboard recording will not work.")
+
+    can_record_desktop = has_display or system != "linux"
+
+    return {
+        "platform": system,
+        "display": display or wayland or None,
+        "has_display_server": has_display,
+        "tools": tools,
+        "recorder_config": recorder_config,
+        "can_record_desktop": can_record_desktop,
+        "issues": issues,
+        "recommendation": (
+            "Desktop recording should work."
+            if can_record_desktop
+            else "Use mode=web for browser-based recording, or provide a display server for desktop recording."
+        ),
+    }
+
+
 @router.post("/{session_id}/hud/toggle")
 async def toggle_hud_interaction(session_id: str):
     svc = _get_service()

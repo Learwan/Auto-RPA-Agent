@@ -42,8 +42,16 @@ class WindowRecorder(BaseRecorder):
         try:
             self._adapter = create_platform_adapter()
         except Exception as e:
-            logger.warning(f"Failed to create platform adapter: {e}")
+            logger.warning(f"WindowRecorder: failed to create platform adapter: {e}")
             self._adapter = None
+
+        if self._adapter is None:
+            logger.warning(
+                "WindowRecorder: no platform adapter available. "
+                "Window switch events will NOT be captured. "
+                "On Linux, ensure wmctrl and xdotool/xprop are installed and a display server is running."
+            )
+
         self._task = asyncio.ensure_future(self._poll_loop())
 
     def stop(self) -> None:

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import platform
 import time
 from uuid import uuid4
 
@@ -25,6 +27,16 @@ SAME_ELEMENT_DEBOUNCE_MS = 500
 SCROLL_MERGE_WINDOW_MS = 500
 
 
+def _check_display_available() -> bool:
+    system = platform.system().lower()
+    if system == "linux":
+        display = os.environ.get("DISPLAY")
+        wayland = os.environ.get("WAYLAND_DISPLAY")
+        if not display and not wayland:
+            return False
+    return True
+
+
 class MouseRecorder(BaseRecorder):
     def __init__(self):
         super().__init__()
@@ -41,6 +53,7 @@ class MouseRecorder(BaseRecorder):
         self._last_click_pos = (0, 0)
         self._scroll_accumulator: dict = {}
         self._last_scroll_time = 0.0
+        self._listener_healthy = False
 
     def start(self, session_id: str, callback) -> None:
         self._session_id = session_id
@@ -51,6 +64,7 @@ class MouseRecorder(BaseRecorder):
         self._last_click_time = 0.0
         self._scroll_accumulator = {}
         self._last_scroll_time = 0.0
+        self._listener_healthy = False
         try:
             self._adapter = create_platform_adapter()
         except Exception as e:
@@ -60,11 +74,27 @@ class MouseRecorder(BaseRecorder):
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             self._loop = None
-        self._listener = mouse.Listener(
-            on_click=self._on_click,
-            on_scroll=self._on_scroll,
-        )
-        self._listener.start()
+
+        if not _check_display_available():
+            logger.warning(
+                "MouseRecorder: no display server detected (DISPLAY and WAYLAND_DISPLAY are unset). "
+                "Mouse events will NOT be captured. Set RECORD_ENABLE_MOUSE=false to suppress this warning, "
+                "or provide a display server (X11/Wayland) for desktop recording."
+            )
+            self._running = False
+            return
+
+        try:
+            self._listener = mouse.Listener(
+                on_click=self._on_click,
+                on_scroll=self._on_scroll,
+            )
+            self._listener.start()
+            self._listener_healthy = True
+        except Exception as e:
+            logger.warning(f"MouseRecorder: failed to start listener: {e}")
+            self._listener = None
+            self._running = False
 
     def stop(self) -> None:
         self._running = False
@@ -247,7 +277,19 @@ class MouseRecorder(BaseRecorder):
 
             context = self._build_context(x, y, element)
             self._emit(MouseEventData(x=x, y=y, button=btn, action=action), OperationType.MOUSE_CLICK, context)
+            self._schedule_anchor_capture(x, y)
             self._last_press_pos = None
+
+    def _schedule_anchor_capture(self, x: int, y: int) -> None:
+        if not self._adapter or not self._loop:
+            return
+        try:
+            from src.recorder.image_anchor import ImageAnchorCapture
+
+            capture = ImageAnchorCapture(adapter=self._adapter)
+            asyncio.run_coroutine_threadsafe(capture.capture_anchor(x, y), self._loop)
+        except Exception as e:
+            logger.debug("Image anchor capture scheduling failed: %s", e)
 
     def _on_scroll(self, x, y, dx, dy):
         if not self._running:
