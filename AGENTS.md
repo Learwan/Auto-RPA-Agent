@@ -42,6 +42,7 @@ AUTO_AGENT_RECORD_ENABLE_FILESYSTEM=false
 ### Known pre-existing test failures
 - `tests/simulation/test_full_pipeline.py` (3 tests): `suggest_flow_name` not wired in `AnalysisService`
 - `tests/unit/test_recorder_configuration.py` (1 test): `/tmp/` prefix in `IGNORED_PREFIXES` conflicts with pytest temp dirs
+- `tests/simulation/test_api_simulation.py` (5 tests): `init_db()` not called in test fixture, so DB tables are missing
 
 ### Important caveats
 - The `src/models/` package was reconstructed from usage analysis because `.gitignore` had `models/` which excluded it. The gitignore was changed to `/models/` to only exclude top-level ML model binaries.
