@@ -4,7 +4,6 @@ import logging
 import math
 import os
 import re
-import sys
 import time
 import uuid
 
@@ -39,11 +38,9 @@ class _HeadlessPyAutoGUI:
 def _load_pyautogui():
     try:
         import pyautogui as _pyautogui
-    except Exception as exc:  # pragma: no cover - import-path dependent
+    except (ImportError, OSError, KeyError, RuntimeError) as exc:
         logger.warning("pyautogui import failed; desktop actions will be unavailable: %r", exc)
-        fallback = _HeadlessPyAutoGUI(exc)
-        sys.modules.setdefault("pyautogui", fallback)
-        return fallback
+        return _HeadlessPyAutoGUI(exc)
 
     _pyautogui.FAILSAFE = False
     return _pyautogui
@@ -261,9 +258,9 @@ class StepExecutor:
                         if recovered:
                             pass
                         else:
-                            window_desc = self._describe_window_target(step.target, resolved_action)
                             raise RuntimeError(
-                                f"执行前验证失败: 窗口未找到 ({window_desc})"
+                                "执行前验证失败: 窗口未找到 "
+                                f"({self._describe_window_target(step.target, resolved_action)})"
                             )
                 else:
                     located_element = await self._locator.locate(step.target)

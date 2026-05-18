@@ -72,14 +72,16 @@ def test_step_executor_headless_import_uses_safe_pyautogui_fallback(monkeypatch)
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
         if name == "pyautogui":
-            raise KeyError("DISPLAY")
+            raise OSError("DISPLAY is not set")
         return real_import(name, globals, locals, fromlist, level)
 
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    reloaded = importlib.reload(step_executor_module)
-    assert reloaded.pyautogui.size() == (1920, 1080)
-    with pytest.raises(RuntimeError, match="headless"):
-        reloaded.pyautogui.click(10, 20)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(builtins, "__import__", fake_import)
+        reloaded = importlib.reload(step_executor_module)
+        assert reloaded.pyautogui.size() == (1920, 1080)
+        with pytest.raises(RuntimeError, match="headless"):
+            reloaded.pyautogui.click(10, 20)
+    importlib.reload(step_executor_module)
 
 
 def _window_target(title: str) -> StepTarget:
