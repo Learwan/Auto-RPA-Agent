@@ -34,6 +34,8 @@ class FlowClosureAssessment(BaseModel):
     summary: str
     metrics: dict = Field(default_factory=dict)
     issues: list[FlowClosureIssue] = Field(default_factory=list)
+    readiness_level: str = "unknown"
+    remediation_hints: list[str] = Field(default_factory=list)
 
 
 class FlowClosureError(RuntimeError):
@@ -118,6 +120,11 @@ class FlowClosureAssessor:
             summary = f"流程仍有 {blocking_issue_count} 个关键闭环风险，已禁止正式执行。"
             status = "needs_review"
 
+        readiness_level = self._compute_readiness_level(
+            ready, score, blocking_issue_count, certified_ratio, context_ratio, checkpoint_ratio
+        )
+        remediation_hints = self._generate_remediation_hints(issues, position_steps, interactive_count)
+
         if confidence_component < 0.55:
             issues.append(
                 FlowClosureIssue(
@@ -147,6 +154,8 @@ class FlowClosureAssessor:
             summary=summary,
             metrics=metrics,
             issues=issues,
+            readiness_level=readiness_level,
+            remediation_hints=remediation_hints,
         )
 
     def _assess_step(self, step: AutomationStep, index: int) -> list[FlowClosureIssue]:
@@ -269,3 +278,51 @@ class FlowClosureAssessor:
             or target.selector
             or target.xpath
         )
+
+    @staticmethod
+    def _compute_readiness_level(
+        ready: bool,
+        score: float,
+        blocking_issues: int,
+        certified_ratio: float,
+        context_ratio: float,
+        checkpoint_ratio: float,
+    ) -> str:
+        if ready:
+            return "production_ready"
+        if blocking_issues == 0 and score >= 0.75:
+            return "near_ready"
+        if certified_ratio >= 0.7 and context_ratio >= 0.5:
+            return "draft_viable"
+        if certified_ratio >= 0.3:
+            return "needs_work"
+        return "not_viable"
+
+    @staticmethod
+    def _generate_remediation_hints(
+        issues: list[FlowClosureIssue],
+        position_steps: int,
+        interactive_count: int,
+    ) -> list[str]:
+        hints: list[str] = []
+        issue_codes = {item.code for item in issues}
+
+        if "position_only_target" in issue_codes:
+            hints.append(
+                f"将 {position_steps} 个坐标定位步骤替换为 css_selector/xpath/accessibility_id 等稳定定位策略。"
+            )
+        if "missing_window_context" in issue_codes:
+            hints.append("为步骤添加 window_title 或 url 上下文，帮助运行时验证执行环境。")
+        if "missing_preconditions" in issue_codes:
+            hints.append("添加 element_exists 或 window_exists 类型前置条件，确保步骤在正确状态下执行。")
+        if "missing_postconditions" in issue_codes:
+            hints.append("添加 page_stable 或自定义后置校验，确认动作生效。")
+        if "locator_requires_confirmation" in issue_codes:
+            hints.append("确认定位器策略或对步骤标记 requires_confirmation=false。")
+        if "weak_text_target" in issue_codes:
+            hints.append("为文本定位补充 role、class_name 或 xpath 以增强可靠性。")
+
+        if not hints and interactive_count > 0:
+            hints.append("流程已通过所有闭环检查。")
+
+        return hints

@@ -17,7 +17,8 @@ def sim_app():
 
 @pytest.fixture
 def sim_client(sim_app):
-    return TestClient(sim_app)
+    with TestClient(sim_app) as client:
+        yield client
 
 
 class TestAPISimulation:
