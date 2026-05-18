@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import re
+import sys
 import time
 import uuid
 
@@ -35,7 +36,21 @@ class _HeadlessPyAutoGUI:
         )
 
 
+def _env_flag_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _headless_runtime_detected() -> bool:
+    if _env_flag_enabled("AUTO_AGENT_FORCE_HEADLESS"):
+        return True
+    if not sys.platform.startswith("linux"):
+        return False
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def _load_pyautogui():
+    if _headless_runtime_detected():
+        return _HeadlessPyAutoGUI(RuntimeError("headless runtime detected (no DISPLAY/WAYLAND_DISPLAY)"))
     try:
         import pyautogui as _pyautogui
     except (ImportError, OSError, KeyError, RuntimeError) as exc:
@@ -59,12 +74,7 @@ def _coord_fallback_allowed() -> bool:
     coordinate-only execution is the only option (e.g. dragging into an
     immutable canvas region).
     """
-    return os.environ.get("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    return _env_flag_enabled("AUTO_AGENT_ALLOW_COORDINATE_FALLBACK")
 
 CONSECUTIVE_FAILURE_LIMIT = 3
 COORDINATE_SAFETY_MARGIN_PX = 5

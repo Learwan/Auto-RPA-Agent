@@ -84,6 +84,23 @@ def test_step_executor_headless_import_uses_safe_pyautogui_fallback(monkeypatch)
     importlib.reload(step_executor_module)
 
 
+def test_step_executor_force_headless_skips_pyautogui_import(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *import_args, **import_kwargs):
+        if name == "pyautogui":
+            raise AssertionError("pyautogui should not be imported when force headless is enabled")
+        return real_import(name, *import_args, **import_kwargs)
+
+    with monkeypatch.context() as scoped:
+        scoped.setenv("AUTO_AGENT_FORCE_HEADLESS", "1")
+        scoped.setattr(builtins, "__import__", fake_import)
+        gui_fallback = step_executor_module._load_pyautogui()
+        assert gui_fallback.size() == (1920, 1080)
+        with pytest.raises(RuntimeError, match="headless"):
+            gui_fallback.click(1, 1)
+
+
 def _window_target(title: str) -> StepTarget:
     return StepTarget(
         strategy=LocateStrategy.TEXT_MATCH,
