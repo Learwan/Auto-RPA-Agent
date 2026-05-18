@@ -1,3 +1,5 @@
+import builtins
+import importlib
 import sys
 from types import SimpleNamespace
 
@@ -63,6 +65,21 @@ class DelayedWindowAdapter(DummyAdapter):
         index = min(self._read_count, len(self._window_sequences) - 1)
         self._read_count += 1
         return list(self._window_sequences[index])
+
+
+def test_step_executor_headless_import_uses_safe_pyautogui_fallback(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
+        if name == "pyautogui":
+            raise KeyError("DISPLAY")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    reloaded = importlib.reload(step_executor_module)
+    assert reloaded.pyautogui.size() == (1920, 1080)
+    with pytest.raises(RuntimeError, match="headless"):
+        reloaded.pyautogui.click(10, 20)
 
 
 def _window_target(title: str) -> StepTarget:

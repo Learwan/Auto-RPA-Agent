@@ -2,13 +2,11 @@ import asyncio
 import contextlib
 import logging
 import math
+import os
 import re
+import sys
 import time
 import uuid
-
-import os
-
-import pyautogui
 
 from src.executor.element_locator import ElementLocator, LocatedElement
 from src.executor.screenshot_comparator import ScreenshotComparator
@@ -17,7 +15,41 @@ from src.models.automation import AutomationStep, LocateStrategy, StepCondition,
 from src.models.execution import ExecutionStepLog, StepStatus, VerificationLevel
 from src.platform.base import BasePlatformAdapter
 
-pyautogui.FAILSAFE = False
+logger = logging.getLogger(__name__)
+
+
+class _HeadlessPyAutoGUI:
+    FAILSAFE = False
+
+    def __init__(self, import_error: Exception):
+        self._import_error = import_error
+
+    @staticmethod
+    def size() -> tuple[int, int]:
+        # Keep safety checks functional in headless environments.
+        return (1920, 1080)
+
+    def __getattr__(self, name: str):
+        raise RuntimeError(
+            "pyautogui is unavailable in this runtime (likely headless / missing DISPLAY). "
+            f"Cannot execute desktop action '{name}'. Original error: {self._import_error!r}"
+        )
+
+
+def _load_pyautogui():
+    try:
+        import pyautogui as _pyautogui
+    except Exception as exc:  # pragma: no cover - import-path dependent
+        logger.warning("pyautogui import failed; desktop actions will be unavailable: %r", exc)
+        fallback = _HeadlessPyAutoGUI(exc)
+        sys.modules.setdefault("pyautogui", fallback)
+        return fallback
+
+    _pyautogui.FAILSAFE = False
+    return _pyautogui
+
+
+pyautogui = _load_pyautogui()
 
 
 def _coord_fallback_allowed() -> bool:
@@ -36,8 +68,6 @@ def _coord_fallback_allowed() -> bool:
         "yes",
         "on",
     }
-
-logger = logging.getLogger(__name__)
 
 CONSECUTIVE_FAILURE_LIMIT = 3
 COORDINATE_SAFETY_MARGIN_PX = 5
@@ -231,8 +261,9 @@ class StepExecutor:
                         if recovered:
                             pass
                         else:
+                            window_desc = self._describe_window_target(step.target, resolved_action)
                             raise RuntimeError(
-                                f"执行前验证失败: 窗口未找到 ({self._describe_window_target(step.target, resolved_action)})"
+                                f"执行前验证失败: 窗口未找到 ({window_desc})"
                             )
                 else:
                     located_element = await self._locator.locate(step.target)
@@ -467,8 +498,6 @@ class StepExecutor:
             await type_text_target(step.target, action)
             return
 
-        import pyautogui
-
         if step.target and step.target.strategy != LocateStrategy.POSITION:
             located = await self._locator.locate(step.target)
             if located and located.center:
@@ -498,8 +527,6 @@ class StepExecutor:
             await press_hotkey(action)
             return
 
-        import pyautogui
-
         keys = action.get("keys", [])
         if keys:
             pyautogui.hotkey(*keys)
@@ -509,8 +536,6 @@ class StepExecutor:
         if (self._is_web_target(step.target) or self._adapter.get_platform_name() == "web") and callable(scroll_target):
             await scroll_target(step.target, action)
             return
-
-        import pyautogui
 
         delta = action.get("delta", 3)
         x = action.get("x")
@@ -526,8 +551,6 @@ class StepExecutor:
         if (self._is_web_target(step.target) or self._adapter.get_platform_name() == "web") and callable(drag_target):
             await drag_target(step.target, action)
             return
-
-        import pyautogui
 
         start_x = action.get("start_x", 0)
         start_y = action.get("start_y", 0)
@@ -557,8 +580,6 @@ class StepExecutor:
             if not activated:
                 raise RuntimeError(f"Failed to activate window: {window_title or target_url}")
         else:
-            import pyautogui
-
             with contextlib.suppress(AttributeError):
                 pyautogui.getWindowsWithTitle(target_window.title)
         await asyncio.sleep(0.3)
