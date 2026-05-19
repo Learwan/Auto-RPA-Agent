@@ -7,11 +7,10 @@ from src.analyzer.checkpoint_support import backfill_flow_checkpoints
 from src.analyzer.closure_assessor import FlowClosureAssessor
 from src.analyzer.confidence_scorer import ConfidenceScorer, ScoredFlow
 from src.analyzer.intent_recognizer import BusinessSemanticExtractor
-from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.knowledge_graph import (
     OperationPattern,
-    WorkflowKnowledgeGraph,
 )
+from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.pattern_detector import PatternDetector
 from src.analyzer.preprocessor import OperationPreprocessor
 from src.analyzer.script_generator import ScriptGenerator
@@ -117,7 +116,6 @@ class AnalysisService:
         scored_flows = self._deduplicate_scored_flows(scored_flows)
         for scored in scored_flows:
             self._attach_semantics_and_checkpoints(scored.flow, normalized)
-            self._attach_closure_assessment(scored.flow)
         scored_flows.sort(key=lambda sf: sf.overall_confidence, reverse=True)
         enhancement_targets = scored_flows[:MAX_AI_ENHANCED_FLOWS]
         for scored in scored_flows[MAX_AI_ENHANCED_FLOWS:]:
@@ -127,6 +125,8 @@ class AnalysisService:
                 *(self._enhance_with_ai(scored, normalized, session_id) for scored in enhancement_targets),
                 return_exceptions=True,
             )
+        for scored in scored_flows:
+            self._attach_closure_assessment(scored.flow)
         await self._sync_session_flows(session_id, scored_flows)
 
         scored_flows.sort(key=lambda sf: sf.overall_confidence, reverse=True)
@@ -253,7 +253,7 @@ class AnalysisService:
                 status_payload["status"] = "invalid_response"
                 status_payload["reason"] = "empty_artifacts"
                 status_payload["last_error"] = "LLM returned no structured artifacts"
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 status_payload["status"] = "timeout"
                 status_payload["reason"] = "llm_timeout"
                 status_payload["last_error"] = str(e)
@@ -269,6 +269,8 @@ class AnalysisService:
             if attempt < AI_ENHANCEMENT_MAX_ATTEMPTS:
                 await asyncio.sleep(AI_ENHANCEMENT_RETRY_DELAY_SECONDS)
 
+        await self._try_suggest_flow_name(flow, flow_desc)
+
         if isinstance(analysis_result, dict):
             self._apply_ai_artifacts(flow, scored, analysis_result)
             logger.info(f"AI analyzed flow {flow.id}: {len(json.dumps(analysis_result, ensure_ascii=False))} chars")
@@ -281,6 +283,23 @@ class AnalysisService:
             logger.debug(f"Knowledge graph updated for flow {flow.id}")
 
         return scored
+
+    async def _try_suggest_flow_name(self, flow: AutomationFlow, flow_desc: str) -> None:
+        if not self._llm or not getattr(self._llm, "is_configured", False):
+            return
+        if not hasattr(self._llm, "suggest_flow_name"):
+            return
+        try:
+            suggested = await asyncio.wait_for(
+                self._llm.suggest_flow_name(flow_desc),
+                timeout=30.0,
+            )
+            suggested = str(suggested or "").strip()
+            if suggested:
+                flow.name = suggested[:100]
+                logger.info(f"LLM suggested name for flow {flow.id}: {flow.name}")
+        except Exception as e:
+            logger.debug(f"Flow name suggestion skipped: {e}")
 
     async def _safe_ai_artifacts(self, flow_desc: str, op_summary: str, flow: AutomationFlow) -> dict | None:
         if not self._llm or not getattr(self._llm, 'is_configured', False):

@@ -25,6 +25,9 @@ from src.platform.base import BasePlatformAdapter
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_EXECUTION_TIMEOUT_S = 600
+MAX_ASYNC_EXECUTION_TIMEOUT_S = 1800
+
 
 class ExecutionService:
     _instance: "ExecutionService | None" = None
@@ -102,10 +105,26 @@ class ExecutionService:
         engine.add_feedback_callback(lambda f: self._enqueue_feedback(execution_id, f))
         self._engines[execution_id] = engine
 
-        if dry_run:
-            record = await engine.dry_run(variables)
-        else:
-            record = await engine.execute(variables)
+        timeout = DEFAULT_EXECUTION_TIMEOUT_S
+        try:
+            if dry_run:
+                record = await asyncio.wait_for(engine.dry_run(variables), timeout=timeout)
+            else:
+                record = await asyncio.wait_for(engine.execute(variables), timeout=timeout)
+        except TimeoutError:
+            logger.error(f"Execution {execution_id} timed out after {timeout}s")
+            record = ExecutionRecord(
+                id=execution_id,
+                automation_id=flow.id,
+                status=ExecutionStatus.FAILED,
+                started_at=time.time() - timeout,
+                completed_at=time.time(),
+                total_steps=len(flow.steps),
+                completed_steps=engine._completed_steps,
+                failed_steps=engine._failed_steps,
+                error_summary=f"Execution timed out after {timeout} seconds",
+                step_logs=engine._step_logs,
+            )
 
         await self._with_repo(lambda r: r.save_execution(record))
 
@@ -178,7 +197,10 @@ class ExecutionService:
 
         async def _run():
             try:
-                record = await engine.execute(initial_variables)
+                record = await asyncio.wait_for(
+                    engine.execute(initial_variables),
+                    timeout=MAX_ASYNC_EXECUTION_TIMEOUT_S,
+                )
                 await self._with_repo(lambda r: r.save_execution(record))
                 self._collect_execution_feedback(engine, record, flow)
                 flow.execution_count += 1
@@ -190,20 +212,58 @@ class ExecutionService:
                     return await r.save_automation(saved_flow)
 
                 await self._with_repo(_save)
-            except Exception as e:
-                logger.error(f"Async execution failed: {e}")
-                from src.models.execution import ExecutionFeedback, StepStatus
-
+            except TimeoutError:
+                logger.error(f"Async execution {execution_id} timed out after {MAX_ASYNC_EXECUTION_TIMEOUT_S}s")
+                timeout_record = ExecutionRecord(
+                    id=execution_id,
+                    automation_id=flow.id,
+                    status=ExecutionStatus.FAILED,
+                    started_at=initial_record.started_at,
+                    completed_at=time.time(),
+                    total_steps=len(flow.steps),
+                    completed_steps=engine._completed_steps,
+                    failed_steps=engine._failed_steps,
+                    error_summary=f"Execution timed out after {MAX_ASYNC_EXECUTION_TIMEOUT_S} seconds",
+                    step_logs=engine._step_logs,
+                )
+                await self._with_repo(lambda r: r.save_execution(timeout_record))
                 self._enqueue_feedback(
                     execution_id,
                     ExecutionFeedback(
                         execution_id=execution_id,
-                        current_step=0,
-                        total_steps=0,
+                        current_step=engine._current_step_index,
+                        total_steps=len(flow.steps),
+                        step_status=StepStatus.FAILED,
+                        step_description="Execution timed out",
+                        error=f"Timeout after {MAX_ASYNC_EXECUTION_TIMEOUT_S}s",
+                        elapsed_ms=int((time.time() - initial_record.started_at) * 1000),
+                    ),
+                )
+            except Exception as e:
+                logger.error(f"Async execution failed: {e}")
+                failed_record = ExecutionRecord(
+                    id=execution_id,
+                    automation_id=flow.id,
+                    status=ExecutionStatus.FAILED,
+                    started_at=initial_record.started_at,
+                    completed_at=time.time(),
+                    total_steps=len(flow.steps),
+                    completed_steps=engine._completed_steps,
+                    failed_steps=engine._failed_steps,
+                    error_summary=f"Execution crashed: {e}",
+                    step_logs=engine._step_logs,
+                )
+                await self._with_repo(lambda r: r.save_execution(failed_record))
+                self._enqueue_feedback(
+                    execution_id,
+                    ExecutionFeedback(
+                        execution_id=execution_id,
+                        current_step=engine._current_step_index,
+                        total_steps=len(flow.steps),
                         step_status=StepStatus.FAILED,
                         step_description=f"Execution crashed: {e}",
                         error=str(e),
-                        elapsed_ms=0,
+                        elapsed_ms=int((time.time() - initial_record.started_at) * 1000),
                     ),
                 )
             finally:
@@ -244,7 +304,10 @@ class ExecutionService:
         if not engine:
             raise ValueError(f"Execution engine not found: {execution_id}")
         await engine.stop()
-        await asyncio.sleep(0.5)
+        for _ in range(10):
+            await asyncio.sleep(0.1)
+            if engine.status in (ExecutionStatus.ABORTED, ExecutionStatus.COMPLETED, ExecutionStatus.FAILED):
+                break
         return self._engine_to_record(engine)
 
     async def skip_step(self, execution_id: str) -> None:
