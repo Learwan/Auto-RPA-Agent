@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from src.config import settings
 from src.llm.gui_grounding import GUIGroundingEngine
+from src.llm.local_engine import LocalLLMEngine
 from src.llm.multimodal_service import (
     MultimodalLLMService,
     VisionError,
@@ -78,11 +79,16 @@ def _handle_vision_error(e: Exception) -> HTTPException:
 
 @router.get("/status")
 async def vision_status():
+    runtime = LocalLLMEngine.get_runtime_snapshot()
     return {
         "enabled": settings.VISION_ENABLED,
         "configured": bool(settings.LOCAL_LLM_ENABLED),
         "model": settings.LOCAL_LLM_MODEL if settings.LOCAL_LLM_ENABLED else None,
         "engine": settings.LOCAL_LLM_ENGINE if settings.LOCAL_LLM_ENABLED else None,
+        "runtime_loaded": runtime["vision_loaded"],
+        "runtime_backend": runtime["vision_backend"],
+        "runtime_device": runtime["vision_device"],
+        "resolved_engine": runtime["resolved_engine"],
         "grounding_threshold": settings.VISION_GROUNDING_CONFIDENCE_THRESHOLD,
         "cache_enabled": settings.VISION_CACHE_ENABLED,
     }

@@ -19,6 +19,64 @@ logger = logging.getLogger(__name__)
 
 _thread_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-engine")
 _VLM_MAX_TOKENS = 512
+_TRANSFORMERS_MINICPM_DOWNSAMPLE_MODE = "16x"
+_TRANSFORMERS_MINICPM_MAX_SLICE_NUMS = 9
+
+
+def _ensure_mlx_vlm_minicpm_compat() -> None:
+    try:
+        import mlx_vlm.prompt_utils as prompt_utils
+        from mlx_vlm.models.minicpmo import config as minicpmo_config
+        from mlx_vlm.models.minicpmo.processing_minicpmo import (
+            MiniCPMOProcessor,
+            install_auto_processor_patch,
+        )
+        from mlx_vlm.utils import MODEL_REMAPPING
+    except Exception as exc:
+        logger.debug("Skipping MiniCPM compatibility patch: %s", exc)
+        return
+
+    MODEL_REMAPPING.setdefault("minicpmv", "minicpmo")
+    MODEL_REMAPPING.setdefault("minicpmv4_6", "minicpmo")
+    prompt_utils.MODEL_CONFIG.setdefault("minicpmv", prompt_utils.MessageFormat.IMAGE_TOKEN)
+    prompt_utils.MODEL_CONFIG.setdefault("minicpmv4_6", prompt_utils.MessageFormat.IMAGE_TOKEN)
+    install_auto_processor_patch("minicpmv", MiniCPMOProcessor)
+    install_auto_processor_patch("minicpmv4_6", MiniCPMOProcessor)
+
+    if not getattr(minicpmo_config.TextConfig, "_auto_agent_minicpm_text_patch", False):
+        original_text_from_dict = minicpmo_config.TextConfig.from_dict.__func__
+
+        @classmethod
+        def _patched_text_from_dict(cls, params):
+            if isinstance(params, dict):
+                params = dict(params)
+                rope_params = params.get("rope_parameters")
+                if isinstance(rope_params, dict):
+                    if "rope_theta" not in params and "rope_theta" in rope_params:
+                        params["rope_theta"] = rope_params["rope_theta"]
+                    if "rope_scaling" not in params:
+                        rope_scaling = dict(rope_params)
+                        if "type" not in rope_scaling and "rope_type" in rope_scaling:
+                            rope_scaling["type"] = rope_scaling.pop("rope_type")
+                        params["rope_scaling"] = rope_scaling
+            return original_text_from_dict(cls, params)
+
+        minicpmo_config.TextConfig.from_dict = _patched_text_from_dict
+        minicpmo_config.TextConfig._auto_agent_minicpm_text_patch = True
+
+    if not getattr(minicpmo_config.VisionConfig, "_auto_agent_minicpm_vision_patch", False):
+        original_vision_from_dict = minicpmo_config.VisionConfig.from_dict.__func__
+
+        @classmethod
+        def _patched_vision_from_dict(cls, params):
+            if isinstance(params, dict):
+                params = dict(params)
+                if params.get("model_type") in {"minicpmv_vision", "minicpmv4_6_vision"}:
+                    params["model_type"] = "siglip_vision_model"
+            return original_vision_from_dict(cls, params)
+
+        minicpmo_config.VisionConfig.from_dict = _patched_vision_from_dict
+        minicpmo_config.VisionConfig._auto_agent_minicpm_vision_patch = True
 
 
 def _detect_platform_capabilities() -> dict:
@@ -477,6 +535,30 @@ class LocalLLMEngine:
                     cls._instance = engine
         return cls._instance
 
+    @classmethod
+    def get_runtime_snapshot(cls) -> dict[str, Any]:
+        instance = cls._instance
+        if instance is None:
+            return {
+                "instance_initialized": False,
+                "resolved_engine": None,
+                "text_model_loaded": False,
+                "vision_loaded": False,
+                "vision_backend": None,
+                "vision_device": None,
+                "model_path": settings.LOCAL_LLM_MODEL,
+            }
+
+        return {
+            "instance_initialized": True,
+            "resolved_engine": instance._engine_type,
+            "text_model_loaded": instance._model_loaded,
+            "vision_loaded": instance._vlm_loaded,
+            "vision_backend": instance._vlm_backend or None,
+            "vision_device": instance._vlm_device or None,
+            "model_path": instance._model_path,
+        }
+
     def __init__(self):
         self._engine_type = settings.LOCAL_LLM_ENGINE
         self._model_path = settings.LOCAL_LLM_MODEL
@@ -493,6 +575,8 @@ class LocalLLMEngine:
         self._vlm_model = None
         self._vlm_processor = None
         self._vlm_loaded = False
+        self._vlm_backend = ""
+        self._vlm_device = ""
 
     async def initialize(self) -> None:
         loop = asyncio.get_running_loop()
@@ -690,6 +774,119 @@ class LocalLLMEngine:
             self._vlm_model = None
             self._vlm_processor = None
             self._vlm_loaded = False
+            self._vlm_backend = ""
+            if self._vlm_device:
+                with contextlib.suppress(Exception):
+                    import torch
+
+                    if self._vlm_device == "mps" and hasattr(torch, "mps"):
+                        torch.mps.empty_cache()
+            self._vlm_device = ""
+
+    def _should_use_transformers_vlm_fallback(self, exc: Exception) -> bool:
+        model_name = self._model_path.lower()
+        if "openbmb" not in model_name or "minicpm-v-4.6" not in model_name:
+            return False
+
+        return True
+
+    def _load_transformers_vlm_sync(self):
+        import torch
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        processor = AutoProcessor.from_pretrained(self._model_path, trust_remote_code=True)
+        model = AutoModelForImageTextToText.from_pretrained(
+            self._model_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+        )
+        model = model.to(device)
+        model.eval()
+        return model, processor, device
+
+    def _generate_with_transformers_vlm_sync(
+        self,
+        prompt_text: str,
+        image_paths: list[str],
+        system_prompt: str | None,
+        max_tokens: int,
+    ) -> tuple[str, int]:
+        import torch
+
+        user_content: list[dict[str, str]] = [
+            {"type": "image", "url": image_path}
+            for image_path in image_paths
+        ]
+        user_content.append({"type": "text", "text": prompt_text})
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": system_prompt}],
+                }
+            )
+        messages.append({"role": "user", "content": user_content})
+
+        inputs = self._vlm_processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+            processor_kwargs={
+                "images_kwargs": {
+                    "downsample_mode": _TRANSFORMERS_MINICPM_DOWNSAMPLE_MODE,
+                    "max_slice_nums": _TRANSFORMERS_MINICPM_MAX_SLICE_NUMS,
+                }
+            },
+        ).to(self._vlm_device)
+
+        with torch.inference_mode():
+            generated_ids = self._vlm_model.generate(
+                **inputs,
+                downsample_mode=_TRANSFORMERS_MINICPM_DOWNSAMPLE_MODE,
+                max_new_tokens=max_tokens,
+            )
+
+        trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
+        output_text = self._vlm_processor.batch_decode(
+            trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        generated_tokens = int(trimmed[0].shape[-1]) if trimmed else 0
+        return (output_text[0] if output_text else ""), generated_tokens
+
+    async def _generate_with_transformers_vlm(
+        self,
+        prompt_text: str,
+        image_paths: list[str],
+        system_prompt: str | None = None,
+    ) -> InferenceResult:
+        vlm_max_tokens = self._effective_vlm_max_tokens()
+        loop = asyncio.get_running_loop()
+        t0 = time.perf_counter()
+        text, generated_tokens = await loop.run_in_executor(
+            _thread_pool,
+            lambda: self._generate_with_transformers_vlm_sync(
+                prompt_text,
+                image_paths,
+                system_prompt,
+                vlm_max_tokens,
+            ),
+        )
+        elapsed = (time.perf_counter() - t0) * 1000
+
+        return InferenceResult(
+            text=text,
+            tokens_generated=generated_tokens,
+            elapsed_ms=round(elapsed, 1),
+            tokens_per_second=round(generated_tokens / max(elapsed / 1000, 0.001), 1),
+            finish_reason="stop",
+        )
 
     async def _load_vlm(self) -> None:
         if self._vlm_loaded:
@@ -699,11 +896,35 @@ class LocalLLMEngine:
         def _load():
             import mlx_vlm
 
+            _ensure_mlx_vlm_minicpm_compat()
             return mlx_vlm.load(self._model_path)
 
-        self._vlm_model, self._vlm_processor = await loop.run_in_executor(_thread_pool, _load)
-        self._vlm_loaded = True
-        logger.info(f"VLM model loaded via mlx_vlm: '{self._model_path}'")
+        try:
+            self._vlm_model, self._vlm_processor = await loop.run_in_executor(_thread_pool, _load)
+            self._vlm_backend = "mlx"
+            self._vlm_device = ""
+            self._vlm_loaded = True
+            logger.info(f"VLM model loaded via mlx_vlm: '{self._model_path}'")
+        except Exception as exc:
+            if not self._should_use_transformers_vlm_fallback(exc):
+                raise
+
+            logger.warning(
+                "mlx_vlm load failed for '%s', falling back to transformers MiniCPM runtime: %s",
+                self._model_path,
+                exc,
+            )
+            self._vlm_model, self._vlm_processor, self._vlm_device = await loop.run_in_executor(
+                _thread_pool,
+                self._load_transformers_vlm_sync,
+            )
+            self._vlm_backend = "transformers"
+            self._vlm_loaded = True
+            logger.info(
+                "VLM model loaded via transformers: '%s' on %s",
+                self._model_path,
+                self._vlm_device,
+            )
 
     def _effective_vlm_max_tokens(self) -> int:
         # Vision generation becomes unstable on Apple GPU when it inherits the large
@@ -742,6 +963,18 @@ class LocalLLMEngine:
                     {"role": "user", "content": prompt},
                 ]
             )
+
+        if self._vlm_backend == "transformers":
+            try:
+                return await self._generate_with_transformers_vlm(
+                    prompt,
+                    [resolved_path],
+                    system_prompt=system_prompt,
+                )
+            finally:
+                if tmp_file:
+                    with contextlib.suppress(Exception):
+                        Path(tmp_file).unlink()
 
         try:
             system_content = system_prompt or (
@@ -818,6 +1051,13 @@ class LocalLLMEngine:
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
                     f.write(img_bytes)
                     tmp_files.append(f.name)
+
+            if self._vlm_backend == "transformers":
+                return await self._generate_with_transformers_vlm(
+                    prompt_text,
+                    tmp_files,
+                    system_prompt=system_prompt,
+                )
 
             sys_content = system_prompt or (
                 "你是一个桌面自动化分析专家。分析屏幕截图中的UI元素和操作上下文，提供准确、详尽的分析。使用中文回答。"

@@ -40,6 +40,7 @@ class MouseAction(str, Enum):
     SCROLL_DOWN = "scroll_down"
     DRAG = "drag"
     DRAG_START = "drag_start"
+    DRAG_END = "drag_end"
     DROP = "drop"
 
 

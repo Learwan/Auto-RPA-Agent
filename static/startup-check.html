@@ -4,15 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>项目启动检查中心</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="/vendor/tailwindcss.js"></script>
+<script src="/vendor/lucide.js"></script>
 <script>
+window.tailwind = window.tailwind || {};
+window.lucide = window.lucide || { createIcons() {} };
 tailwind.config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
-        mono: ['"SF Mono"', '"Cascadia Code"', '"Fira Code"', 'Menlo', 'monospace']
+        sans: ['"Noto Sans SC"', '"PingFang SC"', '"Hiragino Sans GB"', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', '"SF Mono"', '"Cascadia Code"', 'Menlo', 'monospace']
       }
     }
   }
@@ -20,16 +22,16 @@ tailwind.config = {
 </script>
 <style>
 :root {
-  --bg: #f8f6f1;
-  --paper: rgba(255, 255, 255, 0.78);
-  --paper-strong: rgba(255, 255, 255, 0.92);
-  --border: rgba(148, 163, 184, 0.18);
-  --text-main: #1f2937;
-  --text-soft: #64748b;
-  --accent: #0f766e;
-  --accent-soft: rgba(15, 118, 110, 0.12);
-  --warn: #d97706;
-  --danger: #dc2626;
+  --bg: #f4ede3;
+  --paper: rgba(255, 251, 245, 0.82);
+  --paper-strong: rgba(255, 251, 245, 0.94);
+  --border: rgba(121, 94, 61, 0.18);
+  --text-main: #231d18;
+  --text-soft: #6b5f53;
+  --accent: #c96b2c;
+  --accent-soft: rgba(201, 107, 44, 0.12);
+  --warn: #b9781c;
+  --danger: #b45543;
 }
 * { box-sizing: border-box; }
 body {
@@ -37,21 +39,21 @@ body {
   min-height: 100vh;
   color: var(--text-main);
   background:
-    radial-gradient(circle at top left, rgba(45, 212, 191, 0.22), transparent 26%),
-    radial-gradient(circle at top right, rgba(250, 204, 21, 0.16), transparent 24%),
-    linear-gradient(180deg, #fbfaf6 0%, #f5f2ea 100%);
+    radial-gradient(circle at top left, rgba(201, 107, 44, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(33, 108, 100, 0.1), transparent 22%),
+    linear-gradient(180deg, #f8f2ea 0%, var(--bg) 44%, #ede2d3 100%);
 }
 .glass {
   background: var(--paper);
   backdrop-filter: blur(18px);
   border: 1px solid var(--border);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 48px rgba(103, 73, 37, 0.1);
 }
 .glass-strong {
   background: var(--paper-strong);
   backdrop-filter: blur(24px);
   border: 1px solid var(--border);
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 24px 72px rgba(103, 73, 37, 0.12);
 }
 .grid-pattern {
   position: relative;
@@ -120,8 +122,8 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .form-input:focus, .form-select:focus {
-  border-color: rgba(15, 118, 110, 0.5);
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.08);
+  border-color: rgba(201, 107, 44, 0.45);
+  box-shadow: 0 0 0 4px rgba(201, 107, 44, 0.1);
 }
 .btn-primary, .btn-secondary {
   border: none;
@@ -133,14 +135,14 @@ body {
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 .btn-primary {
-  background: linear-gradient(135deg, #14b8a6, #0f766e);
+  background: linear-gradient(135deg, #d77a38, #b65a21);
   color: white;
-  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.24);
+  box-shadow: 0 14px 30px rgba(182, 90, 33, 0.22);
 }
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 251, 245, 0.82);
   color: var(--text-main);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--border);
 }
 .btn-primary:hover, .btn-secondary:hover { transform: translateY(-1px); }
 .toast {
@@ -159,8 +161,9 @@ body {
   .layout-grid { grid-template-columns: 1fr; }
 }
 </style>
+<link rel="stylesheet" href="/ui-theme.css">
 </head>
-<body class="font-sans">
+<body class="claude-light-theme startup-check-theme font-sans">
   <div class="min-h-screen px-4 py-6 md:px-6 lg:px-8">
     <div class="mx-auto max-w-7xl space-y-6">
       <section class="glass-strong grid-pattern relative overflow-hidden rounded-[32px] px-6 py-6 md:px-8 md:py-8">
@@ -460,6 +463,8 @@ function renderRuntimeOverview(effectiveLLM) {
   const remote = effectiveLLM.remote || {};
   const local = effectiveLLM.local || {};
   const vision = effectiveLLM.vision || {};
+  const resolvedEngine = local.resolved_engine || local.engine || '-';
+  const runtimeVision = vision.backend ? `${vision.backend}${vision.device ? ` · ${vision.device}` : ''}` : '尚未加载';
   document.getElementById('runtime-overview').innerHTML = `
     <div class="rounded-2xl bg-white/70 px-4 py-3">
       <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">远端 LLM 来源</div>
@@ -473,11 +478,13 @@ function renderRuntimeOverview(effectiveLLM) {
     <div class="rounded-2xl bg-white/70 px-4 py-3">
       <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">本地 LLM</div>
       <div class="mt-2 text-sm font-black text-slate-800">${local.enabled ? '已开启' : '未开启'}</div>
-      <div class="mt-1 text-xs text-slate-500 font-semibold">${escapeHTML(local.engine || '-')} · ${escapeHTML(local.model || '-')}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">请求引擎：${escapeHTML(local.engine || '-')} · 实际引擎：${escapeHTML(resolvedEngine)}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">${escapeHTML(local.model || '-')}</div>
     </div>
     <div class="rounded-2xl bg-white/70 px-4 py-3">
       <div class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">本地视觉</div>
       <div class="mt-2 text-sm font-black text-slate-800">${vision.enabled ? '已开启' : '已关闭'}</div>
+      <div class="mt-1 text-xs text-slate-500 font-semibold">运行后端：${escapeHTML(runtimeVision)}</div>
       <div class="mt-1 text-xs text-slate-500 font-semibold">依赖状态：${vision.dependency_ok ? 'mlx_vlm 可用' : 'mlx_vlm 需确认'}</div>
     </div>
   `;

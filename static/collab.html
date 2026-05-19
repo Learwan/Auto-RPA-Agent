@@ -4,44 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>录制协作室 — Auto Agent Workflow</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bruno+Ace&family=DM+Mono:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ui-theme.css">
 <style>
 :root {
-  --bg-deep: #0a0e14;
-  --bg-panel: #12171f;
-  --bg-elevated: #1a1f2b;
-  --bg-input: #0d1117;
-  --border: #252b36;
-  --border-active: #3b4456;
-  --text-dim: #5c6678;
-  --text-body: #8b95a5;
-  --text-bright: #c8d0dc;
-  --text-white: #e8edf4;
-  --accent-cyan: #39c5cf;
-  --accent-green: #4cdf8b;
-  --accent-red: #f04b5c;
-  --accent-amber: #f0b34b;
-  --accent-blue: #4b8bf0;
-  --accent-purple: #9b6bf0;
-  --accent-cyan-dim: rgba(57,197,207,0.15);
-  --accent-green-dim: rgba(76,223,139,0.15);
-  --accent-red-dim: rgba(240,75,92,0.15);
-  --glow-cyan: 0 0 12px rgba(57,197,207,0.3);
-  --glow-green: 0 0 12px rgba(76,223,139,0.3);
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-lg: 12px;
-  --font-display: 'Bruno Ace', system-ui, sans-serif;
-  --font-mono: 'DM Mono', 'SF Mono', monospace;
+  --bg-deep: #f4ede3;
+  --bg-panel: rgba(255, 251, 245, 0.9);
+  --bg-elevated: #fffdf8;
+  --bg-input: #f8efe4;
+  --border: rgba(121, 94, 61, 0.18);
+  --border-active: rgba(121, 94, 61, 0.32);
+  --text-dim: #877868;
+  --text-body: #66594c;
+  --text-bright: #241d18;
+  --text-white: #1f1915;
+  --accent-cyan: #c96b2c;
+  --accent-green: #2d7b58;
+  --accent-red: #b45543;
+  --accent-amber: #b9781c;
+  --accent-blue: #356c9f;
+  --accent-purple: #785fb6;
+  --accent-cyan-dim: rgba(201, 107, 44, 0.12);
+  --accent-green-dim: rgba(45, 123, 88, 0.14);
+  --accent-red-dim: rgba(180, 85, 67, 0.14);
+  --glow-cyan: 0 16px 32px rgba(201, 107, 44, 0.18);
+  --glow-green: 0 14px 30px rgba(45, 123, 88, 0.16);
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 24px;
+  --font-display: 'IBM Plex Mono', 'SF Mono', monospace;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
   --font-body: 'Noto Sans SC', system-ui, -apple-system, sans-serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: var(--bg-deep);
+  background:
+    radial-gradient(circle at top left, rgba(201,107,44,0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(53,108,159,0.08), transparent 20%),
+    linear-gradient(180deg, #f8f2ea 0%, var(--bg-deep) 44%, #ece1d1 100%);
   color: var(--text-body);
   font-family: var(--font-body);
   font-size: 14px;
@@ -56,22 +57,28 @@ body::before {
   content: '';
   position: fixed; inset: 0;
   background: 
-    radial-gradient(ellipse at 20% 20%, rgba(57,197,207,0.04) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 80%, rgba(76,223,139,0.03) 0%, transparent 55%),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    linear-gradient(rgba(121, 94, 61, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 94, 61, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
   pointer-events: none; z-index: 0;
+  mask-image: linear-gradient(180deg, rgba(255,255,255,0.38), transparent 100%);
+  opacity: 0.24;
 }
 
 header {
-  background: var(--bg-panel);
+  background: linear-gradient(180deg, rgba(255, 251, 245, 0.94), rgba(255, 247, 238, 0.86));
   border-bottom: 1px solid var(--border);
-  padding: 0 20px;
-  height: 56px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-radius: 0 0 24px 24px;
+  padding: 0 24px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   z-index: 10;
   flex-shrink: 0;
+  box-shadow: 0 16px 42px rgba(103, 73, 37, 0.08);
 }
 
 .header-left {
@@ -80,11 +87,10 @@ header {
 
 .logo {
   font-family: var(--font-display);
-  font-size: 15px;
-  letter-spacing: 3px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
   color: var(--accent-cyan);
   text-transform: uppercase;
-  text-shadow: 0 0 20px rgba(57,197,207,0.4);
 }
 
 .status-dot {
@@ -116,31 +122,31 @@ header {
 .btn {
   font-family: var(--font-body);
   font-size: 12px;
-  font-weight: 500;
-  padding: 7px 16px;
+  font-weight: 600;
+  padding: 8px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.58);
   color: var(--text-bright);
   cursor: pointer;
   transition: all 0.15s;
   letter-spacing: 0.5px;
 }
 
-.btn:hover { border-color: var(--border-active); background: #1e2532; }
+.btn:hover { border-color: var(--border-active); background: rgba(121, 94, 61, 0.08); }
 .btn:active { transform: scale(0.97); }
 
 .btn-primary {
   background: var(--accent-cyan);
   border-color: var(--accent-cyan);
-  color: var(--bg-deep);
+  color: #fffaf4;
   font-weight: 600;
   box-shadow: var(--glow-cyan);
 }
-.btn-primary:hover { background: #4bd5df; }
+.btn-primary:hover { background: #ac581f; }
 
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
-.btn-ghost:hover { color: var(--text-bright); background: rgba(255,255,255,0.03); }
+.btn-ghost:hover { color: var(--text-bright); background: rgba(121, 94, 61, 0.08); }
 
 .btn-red { border-color: var(--accent-red); color: var(--accent-red); }
 .btn-red:hover { background: var(--accent-red-dim); border-color: var(--accent-red); }
@@ -169,7 +175,7 @@ main {
 .sidebar-section h3 {
   font-family: var(--font-display);
   font-size: 10px;
-  letter-spacing: 2px;
+  letter-spacing: 0.16em;
   color: var(--text-dim);
   text-transform: uppercase;
   margin-bottom: 12px;
@@ -514,7 +520,7 @@ main {
 
 .join-overlay {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(0,0,0,0.7);
+  background: rgba(67, 48, 26, 0.26);
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(8px);
 }
@@ -576,7 +582,7 @@ main {
   padding: 12px 18px;
   font-size: 13px;
   color: var(--text-bright);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-shadow: 0 18px 44px rgba(103, 73, 37, 0.16);
   animation: toastIn 0.3s ease-out;
   max-width: 350px;
 }
@@ -593,11 +599,11 @@ main {
 }
 </style>
 </head>
-<body>
+<body class="claude-light-theme collab-theme">
 
 <header>
   <div class="header-left">
-    <span class="logo">REC COLLAB</span>
+    <span class="logo">录制协作室</span>
     <div class="header-status">
       <span><span class="status-dot" id="llmDot"></span><span id="llmLabel">LLM 检测中</span></span>
       <span><span class="status-dot" id="wsDot"></span><span id="wsLabel">未连接</span></span>
@@ -605,8 +611,8 @@ main {
     </div>
   </div>
   <div class="header-right">
-    <button class="btn btn-ghost" onclick="togglePanel('analysis')" title="分析面板">◧ 分析</button>
-    <button class="btn btn-ghost" onclick="togglePanel('suggestions')" title="AI 建议">◨ 建议</button>
+    <button class="btn btn-ghost" onclick="togglePanel('analysis')" title="分析面板">分析面板</button>
+    <button class="btn btn-ghost" onclick="togglePanel('suggestions')" title="AI 建议">AI 建议</button>
     <button class="btn btn-red" id="btnLeave" onclick="leaveRoom()">退出协作</button>
   </div>
 </header>
