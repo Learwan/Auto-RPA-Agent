@@ -7,11 +7,10 @@ from src.analyzer.checkpoint_support import backfill_flow_checkpoints
 from src.analyzer.closure_assessor import FlowClosureAssessor
 from src.analyzer.confidence_scorer import ConfidenceScorer, ScoredFlow
 from src.analyzer.intent_recognizer import BusinessSemanticExtractor
-from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.knowledge_graph import (
     OperationPattern,
-    WorkflowKnowledgeGraph,
 )
+from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.pattern_detector import PatternDetector
 from src.analyzer.preprocessor import OperationPreprocessor
 from src.analyzer.script_generator import ScriptGenerator
@@ -273,19 +272,7 @@ class AnalysisService:
             self._apply_ai_artifacts(flow, scored, analysis_result)
             logger.info(f"AI analyzed flow {flow.id}: {len(json.dumps(analysis_result, ensure_ascii=False))} chars")
 
-        if self._llm and getattr(self._llm, "is_configured", False):
-            try:
-                name_source = flow.description or ", ".join(
-                    s.description for s in flow.steps[:5] if s.description
-                ) or flow_desc
-                suggested = await asyncio.wait_for(
-                    self._llm.suggest_flow_name(name_source),
-                    timeout=30.0,
-                )
-                if suggested and suggested.strip():
-                    flow.name = suggested.strip()[:100]
-            except Exception:
-                logger.debug(f"suggest_flow_name failed for flow {flow.id}")
+        await self._try_suggest_flow_name(flow, flow_desc)
 
         self._set_ai_enhancement_status(flow, status_payload)
 
@@ -295,6 +282,26 @@ class AnalysisService:
             logger.debug(f"Knowledge graph updated for flow {flow.id}")
 
         return scored
+
+    async def _try_suggest_flow_name(self, flow: AutomationFlow, flow_desc: str) -> None:
+        if not self._llm or not getattr(self._llm, "is_configured", False):
+            return
+        if not hasattr(self._llm, "suggest_flow_name"):
+            return
+        name_source = flow.description or ", ".join(
+            s.description for s in flow.steps[:5] if s.description
+        ) or flow_desc
+        try:
+            suggested = await asyncio.wait_for(
+                self._llm.suggest_flow_name(name_source),
+                timeout=30.0,
+            )
+            suggested = str(suggested or "").strip()
+            if suggested:
+                flow.name = suggested[:100]
+                logger.info(f"LLM suggested name for flow {flow.id}: {flow.name}")
+        except Exception as e:
+            logger.debug(f"Flow name suggestion skipped: {e}")
 
     async def _safe_ai_artifacts(self, flow_desc: str, op_summary: str, flow: AutomationFlow) -> dict | None:
         if not self._llm or not getattr(self._llm, 'is_configured', False):

@@ -4,7 +4,7 @@ import time
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ExecutionStatus(str, Enum):
@@ -154,6 +154,14 @@ class ExecutionRecord(BaseModel):
     error_summary: str | None = None
     step_logs: list[ExecutionStepLog] = Field(default_factory=list)
     variables: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("variables", mode="before")
+    @classmethod
+    def _coerce_variables(cls, v: Any) -> dict[str, Any]:
+        if v is None:
+            return {}
+        return v
+
     ai_summary: ExecutionSummary | None = None
     ai_step_insights: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
