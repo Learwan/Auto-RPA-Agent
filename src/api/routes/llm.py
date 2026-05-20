@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.config import settings
+from src.llm.local_engine import LocalLLMEngine
 from src.llm.service import LLMService
 
 router = APIRouter()
@@ -49,12 +50,17 @@ def _get_service() -> LLMService:
 
 @router.get("/status")
 async def llm_status():
+    runtime = LocalLLMEngine.get_runtime_snapshot()
     return {
         "configured": settings.llm_configured,
         "model": settings.LLM_MODEL if settings.llm_configured else None,
         "base_url": settings.LLM_BASE_URL if settings.llm_configured else None,
         "vision_available": settings.VISION_ENABLED and settings.LOCAL_LLM_ENABLED,
         "vision_model": settings.LOCAL_LLM_MODEL if settings.LOCAL_LLM_ENABLED else None,
+        "vision_requested_engine": settings.LOCAL_LLM_ENGINE if settings.LOCAL_LLM_ENABLED else None,
+        "vision_runtime_loaded": runtime["vision_loaded"],
+        "vision_runtime_backend": runtime["vision_backend"],
+        "vision_runtime_device": runtime["vision_device"],
     }
 
 

@@ -4,212 +4,511 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Workflow Marketplace</title>
+    <script src="/vendor/lucide.js"></script>
+    <script>
+        window.lucide = window.lucide || { createIcons() {} };
+    </script>
+    <link rel="stylesheet" href="/ui-theme.css">
     <style>
         :root {
-            --bg: #0f1117;
-            --surface: #1a1d27;
-            --surface-hover: #242736;
-            --border: #2d3148;
-            --text: #e4e6f0;
-            --text-secondary: #8b8fa3;
-            --accent: #6c5ce7;
-            --accent-hover: #7f70f0;
-            --success: #00b894;
-            --warning: #fdcb6e;
-            --danger: #e17055;
+            --bg: #f4ede3;
+            --surface: rgba(255, 251, 245, 0.88);
+            --surface-strong: rgba(255, 251, 245, 0.96);
+            --surface-hover: #fff7ef;
+            --surface-muted: #f5ebde;
+            --border: rgba(121, 94, 61, 0.18);
+            --border-strong: rgba(121, 94, 61, 0.3);
+            --text: #231d18;
+            --text-secondary: #6e6256;
+            --accent: #c96b2c;
+            --accent-hover: #ac581f;
+            --accent-soft: rgba(201, 107, 44, 0.12);
+            --success: #2d7b58;
+            --success-soft: rgba(45, 123, 88, 0.13);
+            --warning: #b9781c;
+            --warning-soft: rgba(185, 120, 28, 0.14);
+            --info: #356c9f;
+            --info-soft: rgba(53, 108, 159, 0.14);
+            --shadow-sm: 0 10px 28px rgba(103, 73, 37, 0.07);
+            --shadow-md: 0 18px 44px rgba(103, 73, 37, 0.1);
+            --shadow-lg: 0 28px 80px rgba(103, 73, 37, 0.16);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
+            font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(201, 107, 44, 0.18), transparent 24%),
+                radial-gradient(circle at top right, rgba(53, 108, 159, 0.08), transparent 20%),
+                linear-gradient(180deg, #f8f2ea 0%, var(--bg) 44%, #ece1d1 100%);
             color: var(--text);
             min-height: 100vh;
         }
+        .page-shell {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 28px 24px 40px;
+        }
         .header {
-            background: var(--surface);
+            background: linear-gradient(180deg, rgba(255, 251, 245, 0.92), rgba(255, 247, 238, 0.84));
             border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            padding: 28px;
+            display: grid;
+            gap: 20px;
+            grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
             position: sticky;
-            top: 0;
+            top: 16px;
             z-index: 100;
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow-md);
+        }
+        .header-copy {
+            min-width: 0;
+        }
+        .eyebrow-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .eyebrow,
+        .eyebrow-muted {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .eyebrow {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+        .eyebrow-muted {
+            background: rgba(121, 94, 61, 0.08);
+            color: var(--text-secondary);
+        }
+        .eyebrow i,
+        .search-bar i,
+        .card-stats i,
+        .card-open i,
+        .header-action i,
+        .modal-meta i {
+            width: 14px;
+            height: 14px;
         }
         .header h1 {
-            font-size: 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            font-size: clamp(30px, 4vw, 42px);
+            line-height: 1.08;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            max-width: 11ch;
         }
-        .header h1 span { color: var(--accent); }
+        .header p {
+            margin-top: 12px;
+            max-width: 58ch;
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .header-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 22px;
+            max-width: 720px;
+        }
+        .stat-card {
+            padding: 16px 18px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.54);
+            border: 1px solid rgba(121, 94, 61, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+        }
+        .stat-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+        .stat-value {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+        .search-panel {
+            border-radius: 24px;
+            border: 1px solid rgba(121, 94, 61, 0.14);
+            background: rgba(255, 255, 255, 0.48);
+            padding: 18px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        }
+        .search-label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
         .search-bar {
             display: flex;
-            gap: 8px;
+            gap: 10px;
             align-items: center;
+            margin-bottom: 10px;
         }
         .search-bar input {
-            background: var(--bg);
+            flex: 1;
+            background: rgba(255, 255, 255, 0.68);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px 16px;
+            border-radius: 18px;
+            padding: 12px 16px;
             color: var(--text);
             font-size: 14px;
-            width: 280px;
             outline: none;
-            transition: border-color 0.2s;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .search-bar input:focus { border-color: var(--accent); }
+        .search-bar input:focus {
+            border-color: rgba(201, 107, 44, 0.45);
+            box-shadow: 0 0 0 4px rgba(201, 107, 44, 0.1);
+        }
+        .search-help {
+            color: var(--text-secondary);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .header-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
         .filters {
             display: flex;
-            gap: 8px;
-            padding: 16px 24px;
+            gap: 10px;
+            padding: 18px 8px 8px;
             flex-wrap: wrap;
         }
+        .filters {
+            margin-top: 10px;
+        }
         .filter-chip {
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.58);
             border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 6px 16px;
+            border-radius: 999px;
+            padding: 10px 16px;
             font-size: 13px;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.2s;
             color: var(--text-secondary);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
         }
         .filter-chip:hover, .filter-chip.active {
-            background: var(--accent);
+            background: var(--accent-soft);
             border-color: var(--accent);
-            color: white;
+            color: var(--accent);
         }
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 16px;
-            padding: 16px 24px;
+            gap: 18px;
+            padding: 18px 0 0;
         }
         .card {
-            background: var(--surface);
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(180deg, var(--surface-strong), rgba(255, 247, 238, 0.9));
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 24px;
+            padding: 22px;
             cursor: pointer;
             transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+        .card::after {
+            content: '';
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            right: -30px;
+            top: -36px;
+            border-radius: 999px;
+            background: rgba(201, 107, 44, 0.08);
         }
         .card:hover {
             border-color: var(--accent);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-md);
+            background: linear-gradient(180deg, #fffdf9, var(--surface-hover));
         }
-        .card-header {
+        .card-top {
+            position: relative;
+            z-index: 1;
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
+            align-items: center;
+            margin-bottom: 14px;
+            gap: 12px;
         }
-        .card-title { font-size: 16px; font-weight: 600; }
+        .card-category {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(121, 94, 61, 0.08);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .card-header {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 14px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 6px;
+        }
+        .card-author {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .card-cta {
+            width: 38px;
+            height: 38px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(121, 94, 61, 0.12);
+            color: var(--accent);
+        }
         .card-badge {
             font-size: 11px;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-weight: 500;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
         }
-        .badge-official { background: rgba(108,92,231,0.2); color: var(--accent); }
-        .badge-community { background: rgba(0,184,148,0.2); color: var(--success); }
-        .badge-featured { background: rgba(253,203,110,0.2); color: var(--warning); }
+        .badge-official { background: var(--info-soft); color: var(--info); }
+        .badge-community { background: var(--success-soft); color: var(--success); }
+        .badge-featured { background: var(--warning-soft); color: var(--warning); }
         .card-desc {
             font-size: 13px;
             color: var(--text-secondary);
-            line-height: 1.5;
-            margin-bottom: 16px;
+            line-height: 1.7;
+            margin-bottom: 18px;
             display: -webkit-box;
             -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
         .card-meta {
+            position: relative;
+            z-index: 1;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 12px;
             color: var(--text-secondary);
+            gap: 12px;
         }
-        .card-stats { display: flex; gap: 12px; }
-        .card-stats span { display: flex; align-items: center; gap: 4px; }
-        .card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .card-stats {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .card-stats span,
+        .card-open {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .card-open {
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .card-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
         .tag {
-            background: var(--bg);
-            padding: 2px 8px;
-            border-radius: 4px;
+            background: rgba(121, 94, 61, 0.08);
+            padding: 5px 10px;
+            border-radius: 999px;
             font-size: 11px;
             color: var(--text-secondary);
+            font-weight: 700;
         }
         .btn {
             background: var(--accent);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
+            border-radius: 16px;
+            padding: 11px 16px;
             font-size: 13px;
+            font-weight: 700;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 14px 28px rgba(172, 88, 31, 0.18);
         }
-        .btn:hover { background: var(--accent-hover); }
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
         .btn-outline {
-            background: transparent;
+            background: rgba(255, 255, 255, 0.56);
             border: 1px solid var(--border);
             color: var(--text);
+            box-shadow: none;
         }
         .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
         .modal-overlay {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(67, 48, 26, 0.28);
             z-index: 200;
             justify-content: center;
             align-items: center;
+            backdrop-filter: blur(10px);
         }
         .modal-overlay.active { display: flex; }
         .modal {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 16px;
+            background: linear-gradient(180deg, var(--surface-strong), rgba(255, 247, 238, 0.94));
+            border: 1px solid var(--border-strong);
+            border-radius: 28px;
             padding: 32px;
             max-width: 600px;
             width: 90%;
             max-height: 80vh;
             overflow-y: auto;
+            box-shadow: var(--shadow-lg);
         }
-        .modal h2 { margin-bottom: 16px; font-size: 22px; }
-        .modal p { color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px; }
+        .modal h2 {
+            margin-bottom: 14px;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        }
+        .modal p { color: var(--text-secondary); line-height: 1.7; margin-bottom: 16px; }
+        .modal-meta {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
         .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
         .empty-state {
             text-align: center;
-            padding: 60px 24px;
+            padding: 72px 24px;
             color: var(--text-secondary);
+            background: rgba(255, 251, 245, 0.58);
+            border: 1px dashed rgba(121, 94, 61, 0.24);
+            border-radius: 28px;
+            margin-top: 20px;
         }
-        .empty-state h3 { margin-bottom: 8px; color: var(--text); }
+        .empty-state h3 { margin-bottom: 8px; color: var(--text); font-size: 24px; }
+        .empty-state p { line-height: 1.7; }
+        @media (max-width: 980px) {
+            .header {
+                grid-template-columns: 1fr;
+            }
+            .header-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 640px) {
+            .page-shell {
+                padding: 18px 16px 32px;
+            }
+            .header {
+                border-radius: 24px;
+                padding: 22px;
+                top: 10px;
+            }
+            .search-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .modal-actions {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
-<body>
-    <div class="header">
-        <h1>🛒 <span>Marketplace</span></h1>
-        <div class="search-bar">
-            <input type="text" id="searchInput" placeholder="Search workflows..." />
-            <button class="btn" onclick="fetchTemplates()">Refresh</button>
+<body class="claude-light-theme marketplace-theme">
+    <div class="page-shell">
+        <div class="header">
+            <div class="header-copy">
+                <div class="eyebrow-row">
+                    <span class="eyebrow"><i data-lucide="store"></i> Workflow Marketplace</span>
+                    <span class="eyebrow-muted">官方与社区模板库</span>
+                </div>
+                <h1>为自动化项目挑选可复用的工作流模板</h1>
+                <p>在统一的暖中性色工作台里浏览、筛选并安装模板，覆盖数据录入、邮件处理、报表生成和营销运营等常见场景。</p>
+                <div class="header-stats">
+                    <div class="stat-card">
+                        <span class="stat-label">模板总数</span>
+                        <strong class="stat-value" id="templateCount">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">官方模板</span>
+                        <strong class="stat-value" id="officialCount">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">精选模板</span>
+                        <strong class="stat-value" id="featuredCount">0</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="search-panel">
+                <label class="search-label" for="searchInput">搜索与同步</label>
+                <div class="search-bar">
+                    <input type="text" id="searchInput" placeholder="搜索模板名称、描述或标签" />
+                    <button class="btn header-action" onclick="fetchTemplates()"><i data-lucide="refresh-cw"></i> 刷新模板</button>
+                </div>
+                <p class="search-help">输入任意关键词即时筛选模板，并可通过刷新按钮同步本地或服务端模板清单。</p>
+            </div>
         </div>
-    </div>
-    <div class="filters">
-        <div class="filter-chip active" data-filter="all" onclick="setFilter(this)">All</div>
-        <div class="filter-chip" data-filter="official" onclick="setFilter(this)">Official</div>
-        <div class="filter-chip" data-filter="community" onclick="setFilter(this)">Community</div>
-        <div class="filter-chip" data-filter="featured" onclick="setFilter(this)">Featured</div>
-    </div>
-    <div class="grid" id="templateGrid"></div>
-    <div class="empty-state" id="emptyState" style="display:none;">
-        <h3>No templates found</h3>
-        <p>Try adjusting your search or filters</p>
+        <div class="filters">
+            <div class="filter-chip active" data-filter="all" onclick="setFilter(this)">全部</div>
+            <div class="filter-chip" data-filter="official" onclick="setFilter(this)">官方</div>
+            <div class="filter-chip" data-filter="community" onclick="setFilter(this)">社区</div>
+            <div class="filter-chip" data-filter="featured" onclick="setFilter(this)">精选</div>
+        </div>
+        <div class="grid" id="templateGrid"></div>
+        <div class="empty-state" id="emptyState" style="display:none;">
+            <h3>没有找到匹配模板</h3>
+            <p>可以换个关键词，或切换筛选条件继续查看。</p>
+        </div>
     </div>
     <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
         <div class="modal" id="modalContent"></div>
@@ -218,6 +517,30 @@
         const API_BASE = '/api/marketplace';
         let currentFilter = 'all';
         let templates = [];
+
+        function renderIcons() {
+            window.lucide.createIcons();
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString('zh-CN');
+        }
+
+        function formatCategory(category) {
+            const map = {
+                productivity: '效率自动化',
+                data: '数据处理',
+                business: '业务运营',
+                marketing: '营销增长'
+            };
+            return map[category] || '通用模板';
+        }
+
+        function updateStats() {
+            document.getElementById('templateCount').textContent = formatNumber(templates.length);
+            document.getElementById('officialCount').textContent = formatNumber(templates.filter(t => t.is_official).length);
+            document.getElementById('featuredCount').textContent = formatNumber(templates.filter(t => t.is_featured).length);
+        }
 
         async function fetchTemplates() {
             try {
@@ -230,6 +553,7 @@
             } catch {
                 templates = getSampleTemplates();
             }
+            updateStats();
             renderTemplates();
         }
 
@@ -273,17 +597,25 @@
             if (filtered.length === 0) {
                 grid.innerHTML = '';
                 empty.style.display = 'block';
+                renderIcons();
                 return;
             }
             empty.style.display = 'none';
 
             grid.innerHTML = filtered.map(t => `
                 <div class="card" onclick="showDetail('${t.id}')">
+                    <div class="card-top">
+                        <span class="card-category">${formatCategory(t.category)}</span>
+                        ${t.is_featured ? '<span class="card-badge badge-featured">精选</span>' :
+                          t.is_official ? '<span class="card-badge badge-official">官方</span>' :
+                          '<span class="card-badge badge-community">社区</span>'}
+                    </div>
                     <div class="card-header">
-                        <div class="card-title">${t.name}</div>
-                        ${t.is_featured ? '<span class="card-badge badge-featured">⭐ Featured</span>' :
-                          t.is_official ? '<span class="card-badge badge-official">Official</span>' :
-                          '<span class="card-badge badge-community">Community</span>'}
+                        <div>
+                            <div class="card-title">${t.name}</div>
+                            <div class="card-author">by ${t.author || 'Unknown'}</div>
+                        </div>
+                        <div class="card-cta"><i data-lucide="arrow-up-right"></i></div>
                     </div>
                     <div class="card-desc">${t.description}</div>
                     <div class="card-tags">
@@ -291,13 +623,14 @@
                     </div>
                     <div class="card-meta">
                         <div class="card-stats">
-                            <span>⬇ ${t.downloads || 0}</span>
-                            <span>⭐ ${t.rating || 'N/A'}</span>
+                            <span><i data-lucide="download"></i>${formatNumber(t.downloads)}</span>
+                            <span><i data-lucide="star"></i>${t.rating || 'N/A'}</span>
                         </div>
-                        <span>by ${t.author || 'Unknown'}</span>
+                        <span class="card-open">查看详情 <i data-lucide="chevron-right"></i></span>
                     </div>
                 </div>
             `).join('');
+            renderIcons();
         }
 
         function showDetail(id) {
@@ -307,22 +640,27 @@
             modal.innerHTML = `
                 <h2>${t.name}</h2>
                 <p>${t.description}</p>
+                <div class="modal-meta">
+                    <span><i data-lucide="layers-3"></i>${formatCategory(t.category)}</span>
+                    <span><i data-lucide="user-round"></i>${t.author || 'Unknown'}</span>
+                </div>
                 <div class="card-tags" style="margin-bottom:16px">
                     ${(t.tags || []).map(tag => `<span class="tag">${tag}</span>`).join('')}
                 </div>
                 <div class="card-meta" style="margin-bottom:16px">
                     <div class="card-stats">
-                        <span>⬇ ${t.downloads || 0} downloads</span>
-                        <span>⭐ ${t.rating || 'N/A'} rating</span>
+                        <span><i data-lucide="download"></i>${formatNumber(t.downloads)} 安装</span>
+                        <span><i data-lucide="star"></i>${t.rating || 'N/A'} 评分</span>
                     </div>
-                    <span>by ${t.author || 'Unknown'}</span>
+                    <span>${t.is_featured ? '精选模板' : t.is_official ? '官方模板' : '社区模板'}</span>
                 </div>
                 <div class="modal-actions">
-                    <button class="btn" onclick="installTemplate('${t.id}')">Install</button>
-                    <button class="btn btn-outline" onclick="closeModal()">Close</button>
+                    <button class="btn" onclick="installTemplate('${t.id}')">安装模板</button>
+                    <button class="btn btn-outline" onclick="closeModal()">关闭</button>
                 </div>
             `;
             document.getElementById('modalOverlay').classList.add('active');
+            renderIcons();
         }
 
         function closeModal(e) {
@@ -334,18 +672,19 @@
             try {
                 const resp = await fetch(`${API_BASE}/templates/${id}/install`, { method: 'POST' });
                 if (resp.ok) {
-                    alert('Template installed successfully!');
+                    alert('模板安装成功');
                 } else {
-                    alert('Installation saved locally (API not available)');
+                    alert('API 不可用，已保存本地安装记录');
                 }
             } catch {
-                alert('Template saved locally (API not available)');
+                alert('API 不可用，已保存本地安装记录');
             }
             closeModal();
         }
 
         document.getElementById('searchInput').addEventListener('input', renderTemplates);
         fetchTemplates();
+        renderIcons();
     </script>
 </body>
 </html>

@@ -16,44 +16,47 @@ if (typeof Babel === 'undefined') {
 <script crossorigin src="https://unpkg.com/reactflow@11/dist/umd/index.js"></script>
 <style>
 :root {
-  --bg-deep: #f7f7f5;
-  --bg-panel: #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-input: #f2f2f0;
-  --bg-node: #ffffff;
-  --bg-node-header: #fafaf8;
-  --border: #e5e5e0;
-  --border-active: #c8c8c2;
-  --text-dim: #8c8c88;
-  --text-body: #5c5c58;
-  --text-bright: #2d2d2a;
-  --text-white: #1a1a18;
-  --accent-primary: #d4650b;
-  --accent-cyan: #0891b2;
-  --accent-green: #18864b;
-  --accent-red: #c23030;
-  --accent-amber: #d4650b;
-  --accent-blue: #2563cc;
-  --accent-purple: #6d34d0;
-  --accent-pink: #be185d;
-  --accent-teal: #0d7d74;
-  --noodle-default: #c8c8c2;
-  --noodle-active: #d4650b;
+  --bg-deep: #f4ece1;
+  --bg-panel: rgba(255, 251, 245, 0.92);
+  --bg-elevated: #fffdf8;
+  --bg-input: #f8efe4;
+  --bg-node: #fffdf8;
+  --bg-node-header: #f6ecdf;
+  --border: rgba(121, 94, 61, 0.18);
+  --border-active: rgba(121, 94, 61, 0.34);
+  --text-dim: #897968;
+  --text-body: #5d5145;
+  --text-bright: #241d18;
+  --text-white: #1f1915;
+  --accent-primary: #c96b2c;
+  --accent-cyan: #216c64;
+  --accent-green: #2d7b58;
+  --accent-red: #b45543;
+  --accent-amber: #b9781c;
+  --accent-blue: #356c9f;
+  --accent-purple: #785fb6;
+  --accent-pink: #a95068;
+  --accent-teal: #216c64;
+  --noodle-default: #cbb8a1;
+  --noodle-active: #c96b2c;
   --port-size: 12px;
   --radius-sm: 6px;
   --radius: 8px;
   --radius-lg: 12px;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.05);
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-body: 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
+  --shadow-sm: 0 8px 24px rgba(103,73,37,0.07);
+  --shadow-md: 0 16px 40px rgba(103,73,37,0.1);
+  --shadow-lg: 0 26px 96px rgba(103,73,37,0.14);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: var(--bg-deep);
+  background:
+    radial-gradient(circle at top left, rgba(201,107,44,0.12), transparent 24%),
+    radial-gradient(circle at top right, rgba(33,108,100,0.08), transparent 18%),
+    linear-gradient(180deg, #f8f2ea 0%, var(--bg-deep) 42%, #ede1d1 100%);
   color: var(--text-body);
   font-family: var(--font-body);
   font-size: 13px;
@@ -61,6 +64,19 @@ body {
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(121, 94, 61, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 94, 61, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(255,255,255,0.38), transparent 100%);
+  opacity: 0.24;
 }
 
 #root { height: 100vh; width: 100vw; }
@@ -115,7 +131,7 @@ body {
 
 .toolbar-title {
   font-weight: 600;
-  color: var(--accent-cyan);
+  color: var(--accent-primary);
   font-size: 13px;
   letter-spacing: 0.5px;
   margin-right: 8px;
@@ -282,7 +298,7 @@ body {
 }
 
 .library-node:hover {
-  background: #f5f5f2;
+  background: var(--bg-node-header);
   border-color: var(--border);
   color: var(--text-bright);
 }
@@ -634,8 +650,9 @@ body {
   transition: width 0.3s;
 }
 </style>
+<link rel="stylesheet" href="/ui-theme.css">
 </head>
-<body>
+<body class="claude-light-theme flow-editor-theme">
 <div id="root">
   <div class="loading-screen">
     <div class="spinner"></div>

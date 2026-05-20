@@ -1,6 +1,8 @@
 import asyncio
+import inspect
 import json
 import logging
+import re
 import time
 
 from src.analyzer.checkpoint_support import backfill_flow_checkpoints
@@ -306,14 +308,100 @@ class AnalysisService:
     async def _safe_ai_artifacts(self, flow_desc: str, op_summary: str, flow: AutomationFlow) -> dict | None:
         if not self._llm or not getattr(self._llm, 'is_configured', False):
             return None
-        return await asyncio.wait_for(
-            self._llm.analyze_flow_artifacts(
-                flow_desc,
-                op_summary,
-                [self._step_prompt_payload(step, index) for index, step in enumerate(flow.steps)],
-            ),
-            timeout=240.0,
-        )
+
+        steps_payload = [self._step_prompt_payload(step, index) for index, step in enumerate(flow.steps)]
+        analyze_flow_artifacts = getattr(self._llm, "analyze_flow_artifacts", None)
+
+        if self._is_async_llm_method(analyze_flow_artifacts):
+            return await asyncio.wait_for(
+                analyze_flow_artifacts(
+                    flow_desc,
+                    op_summary,
+                    steps_payload,
+                ),
+                timeout=240.0,
+            )
+
+        return await self._safe_legacy_ai_artifacts(flow_desc, op_summary)
+
+    async def _safe_legacy_ai_artifacts(self, flow_desc: str, op_summary: str) -> dict | None:
+        suggest_flow_name = getattr(self._llm, "suggest_flow_name", None)
+        analyze_flow = getattr(self._llm, "analyze_flow", None)
+
+        suggested_name = ""
+        analysis_text = ""
+
+        if self._is_async_llm_method(suggest_flow_name):
+            suggested_name = await asyncio.wait_for(suggest_flow_name(flow_desc), timeout=120.0)
+
+        if self._is_async_llm_method(analyze_flow):
+            analysis_text = await asyncio.wait_for(analyze_flow(flow_desc, op_summary), timeout=240.0)
+
+        if not suggested_name and not analysis_text:
+            return None
+
+        summary, risks, improvements, reliability = self._parse_legacy_analysis_text(str(analysis_text or ""))
+        return {
+            "suggested_name": str(suggested_name or "").strip(),
+            "summary": summary,
+            "risks": risks,
+            "improvements": improvements,
+            "reliability_assessment": reliability,
+            "confidence": None,
+            "step_analyses": [],
+        }
+
+    @staticmethod
+    def _is_async_llm_method(method) -> bool:
+        return inspect.iscoroutinefunction(method) or inspect.iscoroutinefunction(getattr(method, "__call__", None))
+
+    @staticmethod
+    def _parse_legacy_analysis_text(analysis_text: str) -> tuple[str, list[str], list[str], str]:
+        if not analysis_text.strip():
+            return "", [], [], ""
+
+        summary_lines: list[str] = []
+        risks: list[str] = []
+        improvements: list[str] = []
+        reliability_lines: list[str] = []
+        current_section = "summary"
+
+        for raw_line in analysis_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            heading = line.lstrip("#").strip().lower()
+            if any(keyword in heading for keyword in ("risk", "风险")):
+                current_section = "risks"
+                continue
+            if any(keyword in heading for keyword in ("recommend", "suggest", "improvement", "建议", "改进")):
+                current_section = "improvements"
+                continue
+            if any(keyword in heading for keyword in ("reliability", "quality assessment", "可靠", "质量评估")):
+                current_section = "reliability"
+                continue
+            if any(keyword in heading for keyword in ("flow analysis", "分析")):
+                current_section = "summary"
+                continue
+
+            cleaned = line.lstrip("-* ").strip()
+            cleaned = re.sub(r"^\d+[\.)]\s*", "", cleaned)
+
+            if current_section == "risks":
+                risks.append(cleaned)
+            elif current_section == "improvements":
+                improvements.append(cleaned)
+            elif current_section == "reliability":
+                reliability_lines.append(cleaned)
+            else:
+                summary_lines.append(cleaned)
+
+        summary = " ".join(summary_lines).strip()
+        reliability = " ".join(reliability_lines).strip()
+        if not summary:
+            summary = analysis_text.strip().splitlines()[0].strip()
+        return summary, risks, improvements, reliability
 
     async def _safe_kg_add(self, flow: AutomationFlow, normalized: list) -> None:
         if not self._knowledge_graph:

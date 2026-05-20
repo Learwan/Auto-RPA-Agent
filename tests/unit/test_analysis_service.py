@@ -77,6 +77,29 @@ class FlakyLLMService(FakeLLMService):
         return await super().analyze_flow_artifacts(flow_description, operations_summary, steps)
 
 
+class LegacyLLMService:
+    is_configured = True
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def suggest_flow_name(self, flow_description: str) -> str:
+        self.calls.append("suggest_flow_name")
+        return "Legacy Named Flow"
+
+    async def analyze_flow(self, flow_description: str, operations_summary: str) -> str:
+        self.calls.append("analyze_flow")
+        return (
+            "## Flow Analysis\n\n"
+            "这个流程会打开目标按钮并继续执行。\n\n"
+            "### Risks\n"
+            "- 文案变化会导致匹配失败\n\n"
+            "### Recommendations\n"
+            "1. 增加窗口校验\n"
+            "2. 为按钮补充文本提示\n"
+        )
+
+
 class FakeOperationRepairService:
     def __init__(self, repaired_operations):
         self.repaired_operations = repaired_operations
@@ -197,6 +220,24 @@ async def test_enhance_with_ai_retries_after_timeout_then_succeeds():
     assert result.flow.metadata["ai_enhancement_status"]["status"] == "success"
     assert result.flow.metadata["ai_enhancement_status"]["attempts"] == 2
     assert result.flow.metadata["ai_analysis"]["summary"] == "AI 总结了这个流程的目标。"
+
+
+@pytest.mark.asyncio
+async def test_enhance_with_ai_falls_back_to_legacy_llm_methods():
+    flow = _make_flow("incoming-flow", "step-incoming")
+    scored = ScoredFlow(flow=flow, overall_confidence=0.55)
+
+    legacy_llm = LegacyLLMService()
+    service = AnalysisService(repository=FakeRepository(), llm_service=legacy_llm)
+
+    result = await service._enhance_with_ai(scored, [], "session-1")
+
+    assert legacy_llm.calls == ["suggest_flow_name", "analyze_flow"]
+    assert result.flow.name == "Legacy Named Flow"
+    assert result.flow.metadata["ai_analysis"]["summary"] == "这个流程会打开目标按钮并继续执行。"
+    assert result.flow.metadata["ai_analysis"]["risks"] == ["文案变化会导致匹配失败"]
+    assert result.flow.metadata["ai_analysis"]["improvements"] == ["增加窗口校验", "为按钮补充文本提示"]
+    assert result.flow.metadata["ai_enhancement_status"]["status"] == "success"
 
 
 @pytest.mark.asyncio
