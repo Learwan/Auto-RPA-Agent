@@ -65,8 +65,13 @@ class _FakeHUDManager:
     def handle_operation(self, event: OperationEvent, operation_count: int):
         self.operations.append((event.id, operation_count))
 
-    def present_focus_context(self, capture: dict):
-        self.focus_contexts.append(capture)
+    def present_focus_context(self, capture: dict, *, enter_interaction: bool = True):
+        self.focus_contexts.append(
+            {
+                "capture": capture,
+                "enter_interaction": enter_interaction,
+            }
+        )
 
 
 class _FakeHotkeyManager:
@@ -305,7 +310,68 @@ async def test_capture_focus_context_uses_service_and_pushes_to_hud():
             "include_llm": False,
         }
     ]
-    assert hud_manager.focus_contexts == [capture]
+    assert hud_manager.focus_contexts == [
+        {
+            "capture": capture,
+            "enter_interaction": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_on_operation_auto_focus_updates_hud_passively(monkeypatch):
+    hud_manager = _FakeHUDManager()
+    focus_service = _FakeFocusContextService()
+    manager = SessionManager(recorders_factory=lambda: [])
+    manager._hud_manager = hud_manager
+    manager._focus_context_service = focus_service
+    manager._sessions["session-hud-auto-passive"] = Session(
+        id="session-hud-auto-passive",
+        name="HUD Auto Passive Session",
+        status=SessionStatus.RECORDING,
+    )
+    manager._recorders["session-hud-auto-passive"] = [SimpleNamespace()]
+    manager._event_subscribers["session-hud-auto-passive"] = []
+    manager._operation_counts["session-hud-auto-passive"] = 0
+    manager._session_options["session-hud-auto-passive"] = {"hud": True}
+    monkeypatch.setattr(manager, "_publish_to_event_bus", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(manager, "_persist_event", _async_noop)
+    monkeypatch.setattr("src.recorder.session_manager.settings.RECORD_AUTO_FOCUS_CONTEXT_ENABLED", True)
+    monkeypatch.setattr("src.recorder.session_manager.settings.RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS", 10)
+
+    manager._on_operation(
+        OperationEvent(
+            id="op-auto-focus-passive-1",
+            session_id="session-hud-auto-passive",
+            seq_num=1,
+            timestamp=1000,
+            type=OperationType.WINDOW_SWITCH,
+            data=WindowEventData(
+                to_window=WindowInfo(
+                    window_id="window-auto-passive-1",
+                    title="编辑商品",
+                    app_name="Chrome",
+                    pid=10,
+                    bounds=Rect(x=0, y=0, width=1440, height=900),
+                    is_active=True,
+                )
+            ),
+            context=OperationContext(platform="macos"),
+        )
+    )
+
+    await asyncio.sleep(0.05)
+
+    assert hud_manager.focus_contexts == [
+        {
+            "capture": {
+                "session_id": "session-hud-auto-passive",
+                "snapshot_id": "snap-focus-1",
+                "focus_summary": "当前窗口: Chrome · 编辑商品",
+            },
+            "enter_interaction": False,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -361,7 +427,7 @@ async def test_on_operation_auto_captures_lightweight_focus_context_for_window_s
 
 
 @pytest.mark.asyncio
-async def test_on_operation_skips_auto_focus_context_for_well_formed_click(monkeypatch):
+async def test_on_operation_auto_focus_context_for_well_formed_click(monkeypatch):
     focus_service = _FakeFocusContextService()
     manager = SessionManager(recorders_factory=lambda: [])
     manager._focus_context_service = focus_service
@@ -404,7 +470,14 @@ async def test_on_operation_skips_auto_focus_context_for_well_formed_click(monke
 
     await asyncio.sleep(0.05)
 
-    assert focus_service.calls == []
+    assert focus_service.calls == [
+        {
+            "session_id": "session-hud-auto-skip",
+            "include_vision": False,
+            "include_ocr": False,
+            "include_llm": False,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -499,6 +572,67 @@ async def test_on_operation_throttles_auto_focus_context(monkeypatch):
             "include_ocr": False,
             "include_llm": False,
         }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_on_operation_auto_focus_uses_own_interval_not_capture_interval(monkeypatch):
+    focus_service = _FakeFocusContextService()
+    manager = SessionManager(recorders_factory=lambda: [])
+    manager._focus_context_service = focus_service
+    manager._sessions["session-hud-auto-interval"] = Session(
+        id="session-hud-auto-interval",
+        name="HUD Auto Interval Session",
+        status=SessionStatus.RECORDING,
+    )
+    manager._recorders["session-hud-auto-interval"] = [SimpleNamespace()]
+    manager._event_subscribers["session-hud-auto-interval"] = []
+    manager._operation_counts["session-hud-auto-interval"] = 0
+    manager._session_options["session-hud-auto-interval"] = {"hud": False}
+    monkeypatch.setattr(manager, "_publish_to_event_bus", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(manager, "_persist_event", _async_noop)
+    monkeypatch.setattr("src.recorder.session_manager.settings.RECORD_AUTO_FOCUS_CONTEXT_ENABLED", True)
+    monkeypatch.setattr("src.recorder.session_manager.settings.RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS", 10)
+    monkeypatch.setattr("src.recorder.session_manager.settings.RECORD_CAPTURE_INTERVAL_MS", 1000)
+
+    first_event = OperationEvent(
+        id="op-auto-focus-interval-1",
+        session_id="session-hud-auto-interval",
+        seq_num=1,
+        timestamp=1000,
+        type=OperationType.WINDOW_SWITCH,
+        data=WindowEventData(
+            to_window=WindowInfo(
+                window_id="window-interval-1",
+                title="编辑商品",
+                app_name="Chrome",
+                pid=10,
+                bounds=Rect(x=0, y=0, width=1440, height=900),
+                is_active=True,
+            )
+        ),
+        context=OperationContext(platform="macos"),
+    )
+    second_event = first_event.model_copy(update={"id": "op-auto-focus-interval-2", "seq_num": 2, "timestamp": 1100})
+
+    manager._on_operation(first_event)
+    await asyncio.sleep(0.05)
+    manager._on_operation(second_event)
+    await asyncio.sleep(0.05)
+
+    assert focus_service.calls == [
+        {
+            "session_id": "session-hud-auto-interval",
+            "include_vision": False,
+            "include_ocr": False,
+            "include_llm": False,
+        },
+        {
+            "session_id": "session-hud-auto-interval",
+            "include_vision": False,
+            "include_ocr": False,
+            "include_llm": False,
+        },
     ]
 
 
@@ -829,6 +963,80 @@ async def test_persist_event_merges_weak_focus_with_visual_node_suggestion(monke
     assert saved_event.context.focused_element.value == "AP80x Arc项目管理沟通群"
     assert saved_event.context.node_suggestion is not None
     assert saved_event.context.node_suggestion["vision_source"] == "local_vlm"
+
+
+@pytest.mark.asyncio
+async def test_persist_event_enriches_well_formed_click_with_recent_focus_capture(monkeypatch):
+    _FakeRepository.saved_operations = []
+    manager = SessionManager(recorders_factory=lambda: [])
+    manager._sessions["session-hud-well-formed"] = Session(
+        id="session-hud-well-formed",
+        name="HUD Well Formed Session",
+        status=SessionStatus.RECORDING,
+    )
+    manager._recorders["session-hud-well-formed"] = [SimpleNamespace()]
+    manager._event_subscribers["session-hud-well-formed"] = []
+    manager._operation_counts["session-hud-well-formed"] = 0
+    manager._session_options["session-hud-well-formed"] = {"hud": False}
+    manager._latest_focus_capture["session-hud-well-formed"] = {
+        "session_id": "session-hud-well-formed",
+        "snapshot_id": "snap-well-formed-1",
+        "timestamp": 1000,
+        "state": {
+            "active_window": {
+                "window_id": "window-well-formed-1",
+                "title": "编辑商品详情",
+                "app_name": "Chrome",
+                "pid": 10,
+            },
+            "focused_element": {
+                "role": "textfield",
+                "title": "商品标题",
+                "identifier": "product-title",
+                "value": "自动化商品",
+                "is_focused": True,
+            },
+        },
+    }
+
+    monkeypatch.setattr("src.recorder.session_manager.get_session_factory", lambda: _fake_factory)
+    monkeypatch.setattr("src.recorder.session_manager.Repository", _FakeRepository)
+
+    await manager._persist_event(
+        OperationEvent(
+            id="op-well-formed-1",
+            session_id="session-hud-well-formed",
+            seq_num=1,
+            timestamp=1000,
+            type=OperationType.MOUSE_CLICK,
+            data=MouseEventData(x=120, y=220, button=MouseButton.LEFT, action=MouseAction.CLICK),
+            context=OperationContext(
+                platform="macos",
+                active_window=WindowInfo(
+                    window_id="window-well-formed-1",
+                    title="编辑商品",
+                    app_name="Chrome",
+                    pid=10,
+                    bounds=Rect(x=0, y=0, width=1440, height=900),
+                    is_active=True,
+                ),
+                focused_element=UIElement(
+                    role="button",
+                    title="保存",
+                    identifier="save-button",
+                    is_focused=True,
+                ),
+            ),
+        )
+    )
+
+    saved_event = _FakeRepository.saved_operations[0]
+    assert saved_event.context is not None
+    assert saved_event.context.active_window is not None
+    assert saved_event.context.active_window.title == "编辑商品"
+    assert saved_event.context.focused_element is not None
+    assert saved_event.context.focused_element.identifier == "save-button"
+    assert saved_event.context.focused_element.value == "自动化商品"
 
 
 @pytest.mark.asyncio

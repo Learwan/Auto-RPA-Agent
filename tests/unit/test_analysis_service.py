@@ -338,6 +338,49 @@ async def test_analyze_session_marks_non_target_flows_with_skipped_rank_limit():
 
 
 @pytest.mark.asyncio
+async def test_analyze_session_uses_key_operations_for_direct_flow():
+    direct_flow = _make_flow("flow-direct-key", "step-direct-key")
+    normalized = [
+        SimpleNamespace(op_type="mouse_click", seq_num=1, timestamp=1000, data={}, context={}),
+        SimpleNamespace(op_type="type_text", seq_num=2, timestamp=1100, data={"text": "sku-001"}, context={}),
+        SimpleNamespace(op_type="mouse_click", seq_num=3, timestamp=1200, data={}, context={}),
+        SimpleNamespace(op_type="switch_window", seq_num=4, timestamp=2000, data={"app_name": "Chrome"}, context={}),
+        SimpleNamespace(op_type="mouse_click", seq_num=5, timestamp=2100, data={}, context={}),
+    ]
+    segments = [
+        SimpleNamespace(operations=normalized[:3]),
+        SimpleNamespace(operations=normalized[3:]),
+    ]
+
+    service = AnalysisService(repository=FakeRepository(), llm_service=None)
+    service._load_operations = AsyncMock(return_value=[object(), object(), object(), object(), object()])
+    service._preprocessor.preprocess = MagicMock(return_value=normalized)
+    service._segmenter.segment = MagicMock(return_value=segments)
+    service._detector.detect_patterns = MagicMock(return_value=[])
+    service._generator.generate_direct = MagicMock(return_value=direct_flow)
+    service._scorer.score_flow = MagicMock(return_value=ScoredFlow(flow=direct_flow, overall_confidence=0.72))
+    service._sync_session_flows = AsyncMock()
+
+    result = await service.analyze_session("session-1", min_confidence=0.0)
+
+    assert len(result) == 1
+    direct_ops = service._generator.generate_direct.call_args.args[0]
+    assert [operation.op_type for operation in direct_ops] == [
+        "type_text",
+        "mouse_click",
+        "switch_window",
+        "mouse_click",
+    ]
+    assert result[0].flow.name == "DirectKey-4steps"
+    assert result[0].flow.metadata["key_step_compaction"] == {
+        "enabled": True,
+        "source_operation_count": 5,
+        "key_operation_count": 4,
+        "segment_count": 2,
+    }
+
+
+@pytest.mark.asyncio
 async def test_analyze_session_attaches_semantic_intent_and_checkpoints():
     flow = _make_flow("flow-semantic", "step-semantic")
     flow.steps[0].metadata["source_seq_num"] = 0

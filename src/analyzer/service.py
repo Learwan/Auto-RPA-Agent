@@ -29,6 +29,18 @@ MAX_OPERATIONS_FOR_ANALYSIS = 10000
 MAX_AI_ENHANCED_FLOWS = 2
 AI_ENHANCEMENT_MAX_ATTEMPTS = 2
 AI_ENHANCEMENT_RETRY_DELAY_SECONDS = 0.5
+DIRECT_KEY_OP_TYPES = {
+    "type_text",
+    "hotkey",
+    "switch_window",
+    "navigation",
+    "upload_file",
+    "download_file",
+    "file_op",
+    "mouse_drag_end",
+    "mouse_drag",
+}
+DIRECT_CLICK_OP_TYPES = {"mouse_click", "mouse_double_click", "mouse_right_click"}
 
 
 class AnalysisService:
@@ -102,10 +114,25 @@ class AnalysisService:
                 pattern_covers_all = True
 
         if not pattern_covers_all and len(normalized) >= 2:
-            direct_flow = self._generator.generate_direct(normalized)
+            direct_ops = self._select_key_operations_for_direct_flow(normalized, segments)
+            direct_flow = self._generator.generate_direct(direct_ops)
             if direct_flow:
                 direct_flow.source_session_id = session_id
-                seq_types = [self._op_type_to_step_type(n.op_type) for n in normalized]
+                direct_flow.name = f"DirectKey-{len(direct_ops)}steps"
+                direct_flow.description = (
+                    f"Direct key-step flow from {len(normalized)} operations "
+                    f"({len(direct_ops)} key operations across {max(len(segments), 1)} segments)"
+                )
+                direct_flow.metadata = {
+                    **(direct_flow.metadata or {}),
+                    "key_step_compaction": {
+                        "enabled": True,
+                        "source_operation_count": len(normalized),
+                        "key_operation_count": len(direct_ops),
+                        "segment_count": len(segments),
+                    },
+                }
+                seq_types = [self._op_type_to_step_type(n.op_type) for n in direct_ops]
                 fallback_pattern = DetectedPattern(
                     id="direct",
                     pattern_sequence=seq_types,
@@ -136,6 +163,59 @@ class AnalysisService:
             f"Analysis complete for session {session_id}: {len(scored_flows)} flows (min_confidence={min_confidence})"
         )
         return scored_flows
+
+    def _select_key_operations_for_direct_flow(self, normalized: list, segments: list) -> list:
+        if not normalized:
+            return []
+
+        groups = [getattr(segment, "operations", None) for segment in segments]
+        groups = [group for group in groups if group]
+        if not groups:
+            groups = [normalized]
+
+        selected = []
+        seen_seq_nums: set[int] = set()
+        for group in groups:
+            for operation in self._select_key_operations_from_group(group):
+                seq_num = getattr(operation, "seq_num", None)
+                if seq_num in seen_seq_nums:
+                    continue
+                if seq_num is not None:
+                    seen_seq_nums.add(seq_num)
+                selected.append(operation)
+
+        return selected or normalized
+
+    def _select_key_operations_from_group(self, operations: list) -> list:
+        if not operations:
+            return []
+
+        special_ops = [operation for operation in operations if operation.op_type in DIRECT_KEY_OP_TYPES]
+        click_ops = [operation for operation in operations if operation.op_type in DIRECT_CLICK_OP_TYPES]
+        selected = []
+
+        first_op = operations[0]
+        if first_op.op_type in {"switch_window", "navigation"}:
+            selected.append(first_op)
+
+        selected.extend(special_ops)
+
+        if click_ops:
+            if not special_ops and len(click_ops) > 1:
+                selected.append(click_ops[0])
+            selected.append(click_ops[-1])
+        elif not special_ops:
+            selected.append(operations[-1])
+
+        deduplicated = []
+        seen_ids: set[int] = set()
+        for operation in selected:
+            marker = id(operation)
+            if marker in seen_ids:
+                continue
+            seen_ids.add(marker)
+            deduplicated.append(operation)
+        return deduplicated
 
     async def get_flow_detail(self, flow_id: str) -> ScoredFlow | None:
         flow = await self._with_repo(lambda r: r.get_automation_flow(flow_id))

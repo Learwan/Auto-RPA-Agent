@@ -219,6 +219,31 @@ def test_present_focus_context_opens_interaction_and_sends_summary(monkeypatch):
     assert any("已抓取当前焦点上下文" in command.get("content", "") for command in assistant_messages)
 
 
+def test_present_focus_context_can_refresh_passively(monkeypatch):
+    manager = RecordingHUDManager()
+    manager._process = _FakeProcess()
+    manager._active_session_id = "session-1"
+    commands: list[dict] = []
+
+    monkeypatch.setattr(manager, "_send_command", lambda payload: commands.append(payload))
+
+    manager.present_focus_context(
+        {
+            "state": {
+                "active_window": _make_window().model_dump(mode="json"),
+                "focused_element": _make_element().model_dump(mode="json"),
+            },
+            "focus_summary": "当前窗口: Chrome · 编辑商品\n当前焦点: 保存",
+        },
+        enter_interaction=False,
+    )
+
+    assert manager._interactive is False
+    assert any(command.get("type") == "state" for command in commands)
+    assert not any(command == {"type": "mode", "interactive": True} for command in commands)
+    assert not any(command.get("type") == "append_message" for command in commands)
+
+
 def test_push_state_includes_hotkey_hints(monkeypatch):
     manager = RecordingHUDManager()
     manager._process = _FakeProcess()

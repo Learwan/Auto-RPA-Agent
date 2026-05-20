@@ -353,7 +353,7 @@ class RecordingHUDManager:
             self._operation_count = operation_count
         self._push_state()
 
-    def present_focus_context(self, capture: dict[str, Any]) -> None:
+    def present_focus_context(self, capture: dict[str, Any], *, enter_interaction: bool = True) -> None:
         if self._active_session_id is None:
             return
 
@@ -361,6 +361,9 @@ class RecordingHUDManager:
         self._latest_window = _window_label_from_payload(state.get("active_window"))
         self._latest_focused = _element_label_from_payload(state.get("focused_element"))
         self._push_state()
+        if not enter_interaction:
+            return
+
         self.set_interaction(True, session_id=self._active_session_id)
         self._send_command(
             {

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         ),
     )
     RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS: int = Field(
-        default=1500,
+        default=400,
         validation_alias=AliasChoices(
             "AUTO_AGENT_RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS",
             "RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS",
