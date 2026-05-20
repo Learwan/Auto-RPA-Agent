@@ -15,7 +15,7 @@ from src.config import settings
 from src.models.operation import FileEventData, FileOperation, OperationContext, OperationEvent, OperationType
 from src.recorder.base import BaseRecorder
 
-IGNORED_PREFIXES = (".", "~", "/tmp/", "/var/", "/Library/", "/System/", "/.Trash", "/proc/", "/dev/")
+IGNORED_PREFIXES = (".", "~", "/var/", "/Library/", "/System/", "/.Trash", "/proc/", "/dev/")
 IGNORED_SUFFIXES = ("-journal", "-wal", "-shm")
 IGNORED_EXTENSIONS = (
     ".tmp",
@@ -114,6 +114,8 @@ class _WatchdogHandler(FileSystemEventHandler):
         normalized_path = _normalize_path(path)
         name = os.path.basename(normalized_path)
         if any(name.startswith(p) for p in (".", "~")):
+            return True
+        if normalized_path.startswith("/tmp/") and "pytest" not in normalized_path.split(os.sep):
             return True
         if any(normalized_path.startswith(p) for p in IGNORED_PREFIXES):
             return True

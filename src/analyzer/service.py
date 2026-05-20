@@ -273,6 +273,20 @@ class AnalysisService:
             self._apply_ai_artifacts(flow, scored, analysis_result)
             logger.info(f"AI analyzed flow {flow.id}: {len(json.dumps(analysis_result, ensure_ascii=False))} chars")
 
+        if self._llm and getattr(self._llm, "is_configured", False):
+            try:
+                name_source = flow.description or ", ".join(
+                    s.description for s in flow.steps[:5] if s.description
+                ) or flow_desc
+                suggested = await asyncio.wait_for(
+                    self._llm.suggest_flow_name(name_source),
+                    timeout=30.0,
+                )
+                if suggested and suggested.strip():
+                    flow.name = suggested.strip()[:100]
+            except Exception:
+                logger.debug(f"suggest_flow_name failed for flow {flow.id}")
+
         self._set_ai_enhancement_status(flow, status_payload)
 
         kg_result = await kg_task

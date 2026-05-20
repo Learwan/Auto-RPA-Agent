@@ -143,7 +143,7 @@ class TestFullPipelineSimulation:
         assert scored_flows
 
         sim_mock_llm_service.suggest_flow_name.assert_called()
-        sim_mock_llm_service.analyze_flow.assert_called()
+        sim_mock_llm_service.analyze_flow_artifacts.assert_called()
 
         flow = scored_flows[0].flow
         assert flow.name != "未命名流程", f"Name should not be default: {flow.name}"
@@ -170,7 +170,7 @@ class TestFullPipelineSimulation:
         stats = kg.get_stats()
         assert stats["operation_patterns"] >= 0, f"KG stats: {stats}"
         sim_mock_llm_service.suggest_flow_name.assert_called()
-        sim_mock_llm_service.analyze_flow.assert_called()
+        sim_mock_llm_service.analyze_flow_artifacts.assert_called()
 
     @pytest.mark.asyncio
     async def test_execution_with_variables(self, sim_platform_adapter, sim_element_locator):
@@ -234,7 +234,7 @@ class TestFullPipelineSimulation:
         stats = kg.get_stats()
         assert "operation_patterns" in stats, f"Missing operation_patterns: {stats}"
         sim_mock_llm_service.suggest_flow_name.assert_called()
-        sim_mock_llm_service.analyze_flow.assert_called()
+        sim_mock_llm_service.analyze_flow_artifacts.assert_called()
 
     # ------------------------------------------------------------------
     # helpers

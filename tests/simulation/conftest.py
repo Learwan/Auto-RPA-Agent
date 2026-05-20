@@ -381,6 +381,17 @@ def sim_mock_llm_service(sim_llm_analysis_response, sim_llm_name_response):
     llm = MagicMock()
     llm.is_configured = True
     llm.analyze_flow = AsyncMock(return_value=sim_llm_analysis_response)
+    llm.analyze_flow_artifacts = AsyncMock(
+        return_value={
+            "suggested_name": sim_llm_name_response,
+            "summary": "Simulated flow analysis summary.",
+            "risks": ["Step timing may be brittle on slow networks"],
+            "improvements": ["Add explicit wait steps after navigation"],
+            "reliability_assessment": "Generally reliable with stable UI anchors",
+            "confidence": 0.88,
+            "step_analyses": [],
+        }
+    )
     llm.suggest_flow_name = AsyncMock(return_value=sim_llm_name_response)
     llm.explain_operations = AsyncMock(return_value="This workflow automates a search query and result selection.")
     return llm
