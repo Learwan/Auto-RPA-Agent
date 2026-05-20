@@ -140,6 +140,26 @@ class ElementStateChecker:
     async def _check_stable(self, element) -> bool:
         if element.bounds is None:
             return True
+        if not hasattr(self, '_locator') or self._locator is None:
+            return True
+        initial_bounds = element.bounds
+        import asyncio
+        for _ in range(STABILITY_CHECK_COUNT):
+            await asyncio.sleep(STABILITY_CHECK_INTERVAL_S)
+            try:
+                re_located = await self._locator.locate(
+                    StepTarget(
+                        strategy=getattr(element, '_strategy_used', None) or element.role,
+                        accessibility_id=element.identifier,
+                    )
+                ) if hasattr(element, 'identifier') and element.identifier else None
+                if re_located and re_located.element and re_located.element.bounds:
+                    b = re_located.element.bounds
+                    if (abs(b.x - initial_bounds.x) > 3 or abs(b.y - initial_bounds.y) > 3
+                            or abs(b.width - initial_bounds.width) > 3 or abs(b.height - initial_bounds.height) > 3):
+                        return False
+            except Exception:
+                pass
         return True
 
     def _check_not_obscured(self, element) -> bool:

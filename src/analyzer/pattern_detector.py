@@ -1,3 +1,4 @@
+import math
 import uuid
 from collections import defaultdict
 
@@ -11,9 +12,11 @@ MAX_INSTANCES_PER_PATTERN = 100
 POSITION_CLUSTER_RADIUS = 30
 WINDOW_CONTEXT_WEIGHT = 0.15
 TEMPORAL_CONSISTENCY_WEIGHT = 0.15
-SUPPORT_WEIGHT = 0.4
-LENGTH_WEIGHT = 0.15
+SUPPORT_WEIGHT = 0.35
+LENGTH_WEIGHT = 0.10
 SEMANTIC_COHESION_WEIGHT = 0.15
+PARAMETER_SIMILARITY_WEIGHT = 0.10
+SPATIAL_COHERENCE_WEIGHT = 0.15
 
 OP_TYPE_TO_STEP_TYPE = {
     "mouse_click": StepType.CLICK,
@@ -188,9 +191,11 @@ class PatternDetector:
     def _compute_confidence(self, pattern: DetectedPattern, operations: list[NormalizedOperation]) -> float:
         support_score = min(pattern.support / 10.0, 1.0)
         length_score = min(len(pattern.pattern_sequence) / 15.0, 1.0)
-        temporal_score = self._temporal_consistency(pattern)
+        temporal_score = self._temporal_consistency(pattern, operations)
         window_score = self._window_consistency(pattern, operations)
         semantic_score = self._semantic_cohesion(pattern)
+        param_score = self._parameter_similarity(pattern, operations)
+        spatial_score = self._spatial_coherence(pattern, operations)
 
         confidence = (
             support_score * SUPPORT_WEIGHT
@@ -198,15 +203,27 @@ class PatternDetector:
             + temporal_score * TEMPORAL_CONSISTENCY_WEIGHT
             + window_score * WINDOW_CONTEXT_WEIGHT
             + semantic_score * SEMANTIC_COHESION_WEIGHT
+            + param_score * PARAMETER_SIMILARITY_WEIGHT
+            + spatial_score * SPATIAL_COHERENCE_WEIGHT
         )
         return round(min(confidence, 1.0), 4)
 
-    def _temporal_consistency(self, pattern: DetectedPattern) -> float:
-        if not pattern.instances or pattern.avg_duration_ms == 0:
-            return 0.0
-        if len(pattern.instances) < 2:
+    def _temporal_consistency(self, pattern: DetectedPattern, operations: list[NormalizedOperation]) -> float:
+        if not pattern.instances or len(pattern.instances) < 2:
             return 0.5
-        return min(1.0, 1.0 / (1.0 + abs(pattern.avg_duration_ms - 5000) / 10000))
+        durations: list[float] = []
+        for inst in pattern.instances:
+            s, e = inst["start_idx"], inst["end_idx"]
+            if s < len(operations) and e < len(operations):
+                durations.append(float(operations[e].timestamp - operations[s].timestamp))
+        if len(durations) < 2:
+            return 0.5
+        mean_d = sum(durations) / len(durations)
+        if mean_d <= 0:
+            return 0.5
+        variance = sum((d - mean_d) ** 2 for d in durations) / len(durations)
+        cv = math.sqrt(variance) / mean_d
+        return round(max(0.0, min(1.0, 1.0 - cv)), 4)
 
     def _window_consistency(self, pattern: DetectedPattern, operations: list[NormalizedOperation]) -> float:
         if not pattern.instances:
@@ -229,10 +246,93 @@ class PatternDetector:
         if not seq:
             return 0.0
         type_set = set(seq)
-        if len(type_set) == 1:
+        diversity_ratio = len(type_set) / len(seq)
+        if diversity_ratio < 0.15:
             return 0.3
-        if len(type_set) <= 2:
-            return 0.6
-        if len(type_set) <= 4:
+        if diversity_ratio <= 0.4:
             return 0.8
-        return 0.5
+        if diversity_ratio <= 0.65:
+            return 0.6
+        return 0.4
+
+    def _parameter_similarity(self, pattern: DetectedPattern, operations: list[NormalizedOperation]) -> float:
+        """Cross-instance parameter matching (Behavioral Pattern Mining).
+
+        Compare action parameters (app names, text, keys) between instances
+        of the same pattern position — high similarity means the pattern
+        captures genuinely repeated behaviour, not coincidental type matches.
+        """
+        if len(pattern.instances) < 2:
+            return 0.5
+        seq_len = len(pattern.pattern_sequence)
+        position_params: dict[int, list[str]] = defaultdict(list)
+        for inst in pattern.instances:
+            start = inst["start_idx"]
+            for offset in range(seq_len):
+                idx = start + offset
+                if idx >= len(operations):
+                    break
+                op = operations[idx]
+                sig = self._extract_param_signature(op)
+                position_params[offset].append(sig)
+
+        if not position_params:
+            return 0.5
+        similarity_scores: list[float] = []
+        for _offset, sigs in position_params.items():
+            if len(sigs) < 2:
+                continue
+            most_common = max(set(sigs), key=sigs.count)
+            match_ratio = sigs.count(most_common) / len(sigs)
+            similarity_scores.append(match_ratio)
+        return round(sum(similarity_scores) / max(len(similarity_scores), 1), 4)
+
+    @staticmethod
+    def _extract_param_signature(op: NormalizedOperation) -> str:
+        parts: list[str] = []
+        app = op.data.get("app_name", "")
+        if app:
+            parts.append(f"app:{app}")
+        text = op.data.get("text", "")
+        if text:
+            parts.append(f"txt:{text[:30]}")
+        key = op.data.get("key", "")
+        if key:
+            parts.append(f"key:{key}")
+        return "|".join(parts) if parts else op.op_type
+
+    def _spatial_coherence(self, pattern: DetectedPattern, operations: list[NormalizedOperation]) -> float:
+        """Spatial clustering of click positions across instances.
+
+        Uses POSITION_CLUSTER_RADIUS to check whether click positions
+        cluster tightly or scatter randomly — tight clusters indicate a
+        genuine repeated interaction target.
+        """
+        if len(pattern.instances) < 2:
+            return 0.5
+        seq_len = len(pattern.pattern_sequence)
+        step_positions: dict[int, list[tuple[float, float]]] = defaultdict(list)
+        for inst in pattern.instances:
+            start = inst["start_idx"]
+            for offset in range(seq_len):
+                idx = start + offset
+                if idx >= len(operations):
+                    break
+                op = operations[idx]
+                x, y = op.data.get("x"), op.data.get("y")
+                if x is not None and y is not None:
+                    step_positions[offset].append((float(x), float(y)))
+
+        if not step_positions:
+            return 0.5
+        coherence_scores: list[float] = []
+        for _offset, positions in step_positions.items():
+            if len(positions) < 2:
+                continue
+            cx = sum(p[0] for p in positions) / len(positions)
+            cy = sum(p[1] for p in positions) / len(positions)
+            distances = [math.sqrt((p[0] - cx) ** 2 + (p[1] - cy) ** 2) for p in positions]
+            avg_dist = sum(distances) / len(distances)
+            score = max(0.0, 1.0 - avg_dist / (POSITION_CLUSTER_RADIUS * 3))
+            coherence_scores.append(score)
+        return round(sum(coherence_scores) / max(len(coherence_scores), 1), 4)

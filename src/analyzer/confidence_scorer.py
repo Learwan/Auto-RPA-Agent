@@ -12,8 +12,13 @@ ANOMALY_WEIGHT = 0.2
 
 LOCATOR_RELIABILITY = {
     LocateStrategy.ACCESSIBILITY_ID: 0.95,
+    LocateStrategy.CSS_SELECTOR: 0.90,
+    LocateStrategy.XPATH: 0.85,
     LocateStrategy.TEXT_MATCH: 0.80,
+    LocateStrategy.IMAGE_ANCHOR: 0.75,
     LocateStrategy.IMAGE_MATCH: 0.65,
+    LocateStrategy.OCR: 0.60,
+    LocateStrategy.COORDINATE: 0.45,
     LocateStrategy.POSITION: 0.40,
 }
 

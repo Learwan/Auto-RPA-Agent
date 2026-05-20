@@ -3,14 +3,23 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import time
 
 from src.models.automation import LocateStrategy, StepTarget
 
 logger = logging.getLogger(__name__)
 
+HEALED_CACHE_TTL_S = 300
+HEALED_CACHE_MAX_SIZE = 64
+
 
 class SelfHealingLocator:
-    """Wraps ElementLocator with LLM-powered recovery on failure."""
+    """Wraps ElementLocator with LLM-powered recovery on failure.
+
+    Implements the DOM accessibility tree approach (zero-cost self-healing,
+    2026) with LLM fallback. Cache entries expire after HEALED_CACHE_TTL_S
+    to prevent stale targets from persisting across UI changes.
+    """
 
     def __init__(self, base_locator, adapter, llm_service=None):
         from src.executor.element_locator import ElementLocator
@@ -19,15 +28,16 @@ class SelfHealingLocator:
         self._base: ElementLocator = base_locator
         self._adapter: BasePlatformAdapter = adapter
         self._llm_service = llm_service
-        self._healed_cache: dict[str, StepTarget] = {}
+        self._healed_cache: dict[str, tuple[StepTarget, float]] = {}
 
     async def locate(self, target: StepTarget, step_id: str = ""):
-        if step_id and step_id in self._healed_cache:
-            healed_target = self._healed_cache[step_id]
-            result = await self._base.locate(healed_target)
+        cached = self._get_cached(step_id)
+        if cached is not None:
+            result = await self._base.locate(cached)
             if result:
                 logger.info("SelfHealingLocator: cache hit for step %s", step_id)
                 return result
+            self._evict(step_id)
 
         result = await self._base.locate(target)
         if result:
@@ -44,8 +54,7 @@ class SelfHealingLocator:
 
         result = await self._base.locate(suggested)
         if result:
-            if step_id:
-                self._healed_cache[step_id] = suggested
+            self._put_cached(step_id, suggested)
             logger.info(
                 "SelfHealingLocator: healed target for step %s via LLM suggestion",
                 step_id,
@@ -53,6 +62,26 @@ class SelfHealingLocator:
             return result
 
         return None
+
+    def _get_cached(self, step_id: str) -> StepTarget | None:
+        if not step_id or step_id not in self._healed_cache:
+            return None
+        target, ts = self._healed_cache[step_id]
+        if time.time() - ts > HEALED_CACHE_TTL_S:
+            del self._healed_cache[step_id]
+            return None
+        return target
+
+    def _put_cached(self, step_id: str, target: StepTarget) -> None:
+        if not step_id:
+            return
+        if len(self._healed_cache) >= HEALED_CACHE_MAX_SIZE:
+            oldest_key = min(self._healed_cache, key=lambda k: self._healed_cache[k][1])
+            del self._healed_cache[oldest_key]
+        self._healed_cache[step_id] = (target, time.time())
+
+    def _evict(self, step_id: str) -> None:
+        self._healed_cache.pop(step_id, None)
 
     async def _attempt_recovery(self, target: StepTarget) -> StepTarget | None:
         failure_context = await self._build_failure_context(target)
@@ -75,20 +104,27 @@ class SelfHealingLocator:
             parts.append(f"截图获取失败: {e}")
 
         try:
-            if self._adapter.get_platform_name() == "web":
-                snapshot = await self._get_web_accessibility_snapshot()
-                if snapshot:
-                    parts.append(f"页面可访问性快照:\n{snapshot[:3000]}")
+            snapshot = await self._get_accessibility_snapshot()
+            if snapshot:
+                parts.append(f"可访问性快照:\n{snapshot[:3000]}")
         except Exception as e:
             parts.append(f"可访问性快照获取失败: {e}")
 
         return "\n".join(parts)
 
-    async def _get_web_accessibility_snapshot(self) -> str | None:
-        get_snapshot = getattr(self._adapter, "get_accessibility_snapshot", None)
-        if callable(get_snapshot):
-            snapshot = await get_snapshot()
-            return json.dumps(snapshot, ensure_ascii=False, indent=2) if snapshot else None
+    async def _get_accessibility_snapshot(self) -> str | None:
+        for method_name in ("get_accessibility_snapshot", "get_accessibility_tree", "get_ui_tree"):
+            getter = getattr(self._adapter, method_name, None)
+            if not callable(getter):
+                continue
+            try:
+                snapshot = await getter()
+                if snapshot:
+                    if isinstance(snapshot, (dict, list)):
+                        return json.dumps(snapshot, ensure_ascii=False, indent=2)
+                    return str(snapshot)
+            except Exception:
+                continue
         return None
 
     async def _llm_suggest_locator(self, failure_context: str) -> StepTarget | None:
@@ -122,13 +158,25 @@ class SelfHealingLocator:
     def _parse_suggestion(text: str) -> StepTarget | None:
         import re
 
-        json_match = re.search(r"\{[^}]+\}", text, re.DOTALL)
-        if not json_match:
-            return None
+        data = None
+        for match in re.finditer(r"\{", text):
+            start = match.start()
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            data = json.loads(text[start : i + 1])
+                            break
+                        except json.JSONDecodeError:
+                            break
+            if data is not None:
+                break
 
-        try:
-            data = json.loads(json_match.group(0))
-        except json.JSONDecodeError:
+        if not isinstance(data, dict):
             return None
 
         strategy_str = data.get("strategy", "text_match")
@@ -138,7 +186,6 @@ class SelfHealingLocator:
             "text_match": LocateStrategy.TEXT_MATCH,
             "accessibility_id": LocateStrategy.ACCESSIBILITY_ID,
             "image_match": LocateStrategy.IMAGE_MATCH,
-            "position": LocateStrategy.POSITION,
         }
         strategy = strategy_map.get(strategy_str, LocateStrategy.TEXT_MATCH)
 
@@ -149,6 +196,7 @@ class SelfHealingLocator:
             text_contains=data.get("text_contains"),
             title=data.get("title"),
             accessibility_id=data.get("accessibility_id"),
+            window_title=data.get("window_title"),
         )
 
     @staticmethod
