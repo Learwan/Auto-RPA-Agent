@@ -232,7 +232,7 @@ async def test_enhance_with_ai_falls_back_to_legacy_llm_methods():
 
     result = await service._enhance_with_ai(scored, [], "session-1")
 
-    assert legacy_llm.calls == ["suggest_flow_name", "analyze_flow"]
+    assert legacy_llm.calls == ["suggest_flow_name", "analyze_flow", "suggest_flow_name"]
     assert result.flow.name == "Legacy Named Flow"
     assert result.flow.metadata["ai_analysis"]["summary"] == "这个流程会打开目标按钮并继续执行。"
     assert result.flow.metadata["ai_analysis"]["risks"] == ["文案变化会导致匹配失败"]
