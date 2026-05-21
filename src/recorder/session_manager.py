@@ -306,6 +306,7 @@ class SessionManager:
         include_vision: bool = True,
         include_ocr: bool = True,
         include_llm: bool = True,
+        present_interactively: bool = True,
     ) -> dict[str, Any]:
         session = self._sessions.get(session_id)
         if not session:
@@ -325,7 +326,7 @@ class SessionManager:
         )
         self._latest_focus_capture[session_id] = capture
         if self._is_hud_enabled(session_id) and self._hud_manager is not None:
-            self._hud_manager.present_focus_context(capture)
+            self._hud_manager.present_focus_context(capture, enter_interaction=present_interactively)
         try:
             bus = EventBus.get_instance()
             bus.publish_sync(
@@ -502,10 +503,8 @@ class SessionManager:
         if not self._uses_desktop_helpers(session_id):
             return False
 
-        minimum_interval_ms = max(
-            settings.RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS,
-            settings.RECORD_CAPTURE_INTERVAL_MS,
-        )
+        # Lightweight focus refresh should stay responsive even when screenshots run slower.
+        minimum_interval_ms = settings.RECORD_AUTO_FOCUS_CONTEXT_INTERVAL_MS
         if minimum_interval_ms > 0:
             last_capture = self._last_auto_focus_capture_at.get(session_id, 0.0)
             if (time.monotonic() - last_capture) < (minimum_interval_ms / 1000):
@@ -521,11 +520,7 @@ class SessionManager:
             and event.data.is_sensitive
         ):
             return False
-
-        context = event.context
-        if context is None:
-            return True
-        return self._context_needs_recording_enrichment(context)
+        return True
 
     async def _capture_focus_context_background(self, session_id: str) -> None:
         try:
@@ -534,6 +529,7 @@ class SessionManager:
                 include_vision=False,
                 include_ocr=False,
                 include_llm=False,
+                present_interactively=False,
             )
         except Exception as exc:
             logger.debug("Auto focus context capture failed for %s: %s", session_id, exc)
@@ -590,9 +586,7 @@ class SessionManager:
             and event.data.is_sensitive
         ):
             return False
-
-        context = event.context
-        return context is None or self._context_needs_recording_enrichment(context)
+        return True
 
     def _context_needs_recording_enrichment(self, context) -> bool:
         if context is None:
