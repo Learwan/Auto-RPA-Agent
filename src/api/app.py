@@ -27,6 +27,7 @@ from src.api.routes import (
 from src.api.routes import settings as settings_routes
 from src.config import settings
 from src.db.database import close_db, init_db
+from src.llm.gui_grounding import GUIGroundingEngine
 from src.llm.local_engine import LocalLLMEngine
 from src.monitoring.middleware import MonitoringMiddleware
 from src.security.rate_limiter import RateLimitMiddleware
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
         from src.executor.execution_service import ExecutionService
 
         exec_svc = ExecutionService.get_instance()
+        grounding_runtime = GUIGroundingEngine().get_runtime_status()
         ai_status = {}
         try:
             ai_status["intelligent_recovery"] = {
@@ -195,6 +197,7 @@ def create_app() -> FastAPI:
             if settings.VISION_ENABLED and settings.LOCAL_LLM_ENABLED
             else None,
             "grounding_engine": getattr(settings, "GROUNDING_ENGINE", "qwen"),
+            "grounding_runtime": grounding_runtime,
             "collab_enabled": settings.COLLAB_ENABLED,
             "recorders": {
                 "mouse": settings.RECORD_ENABLE_MOUSE,
@@ -211,6 +214,7 @@ def create_app() -> FastAPI:
         user_settings = store.get_settings()
         remote_llm = user_settings.remote_llm
         runtime = LocalLLMEngine.get_runtime_snapshot()
+        grounding_runtime = GUIGroundingEngine().get_runtime_status()
 
         try:
             import mlx_vlm  # noqa: F401
@@ -377,11 +381,21 @@ def create_app() -> FastAPI:
                     _build_startup_check(
                         "grounding_engine",
                         "Grounding 引擎",
-                        enabled=bool(getattr(settings, "GROUNDING_ENGINE", "")),
-                        detail=f"当前 grounding 引擎：{getattr(settings, 'GROUNDING_ENGINE', '未配置')}。",
-                        value=getattr(settings, "GROUNDING_ENGINE", "未配置") or "未配置",
-                        action="设置 AUTO_AGENT_GROUNDING_ENGINE 并重启服务。" if not getattr(settings, "GROUNDING_ENGINE", "") else None,
-                        status="enabled" if getattr(settings, "GROUNDING_ENGINE", "") else "warning",
+                        enabled=grounding_runtime["can_attempt_grounding"],
+                        detail=grounding_runtime["detail"],
+                        value=(
+                            f"{grounding_runtime['requested_engine']} -> {grounding_runtime['preferred_backend']}"
+                        ),
+                        action=(
+                            "设置 AUTO_AGENT_VISION_ENABLED=true 并重启服务。"
+                            if grounding_runtime["status"] == "disabled"
+                            else None
+                        ),
+                        status=(
+                            "enabled"
+                            if grounding_runtime["status"] == "ready"
+                            else "warning"
+                        ),
                     ),
                     _build_startup_check(
                         "data_dir",
@@ -420,6 +434,7 @@ def create_app() -> FastAPI:
                     "runtime_loaded": runtime["vision_loaded"],
                     "backend": runtime_backend,
                     "device": runtime_device,
+                    "grounding": grounding_runtime,
                 },
             },
             "sections": sections,

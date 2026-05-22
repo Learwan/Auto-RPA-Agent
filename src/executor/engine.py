@@ -134,7 +134,32 @@ class ExecutionEngine:
             result.step_log.visual_comparison = result.visual_comparison
         if result.verification_result:
             result.step_log.verification_result = result.verification_result
+        locator_payload = self._locator_payload(result)
+        if locator_payload:
+            result.step_log.metadata = dict(result.step_log.metadata or {})
+            result.step_log.metadata["locator"] = locator_payload
         return result
+
+    @staticmethod
+    def _locator_payload(result: StepResult | None) -> dict | None:
+        if result is None:
+            return None
+        if isinstance(result.step_log.metadata, dict):
+            payload = result.step_log.metadata.get("locator")
+            if isinstance(payload, dict):
+                return payload
+        if result.located_element is None:
+            return None
+        return result.located_element.telemetry()
+
+    @staticmethod
+    def _timing_payload(result: StepResult | None) -> dict | None:
+        if result is None:
+            return None
+        if not isinstance(result.step_log.metadata, dict):
+            return None
+        payload = result.step_log.metadata.get("timing")
+        return payload if isinstance(payload, dict) else None
 
     async def execute(self, variables: dict | None = None) -> ExecutionRecord:
         self._variables = variables or self._build_default_variables()
@@ -383,6 +408,8 @@ class ExecutionEngine:
             try:
                 result = await self._executor.execute_step(step, self._variables, self._execution_id, index)
                 result = self._decorate_step_result(result)
+                locator_payload = self._locator_payload(result)
+                timing_payload = self._timing_payload(result)
                 self._step_logs.append(result.step_log)
                 post_advice, assist_advice = await self._build_step_advice(step, result, index)
 
@@ -396,6 +423,8 @@ class ExecutionEngine:
                             step_id=step.id,
                             step_type=step.type.value,
                             visual_comparison=result.visual_comparison,
+                            locator=locator_payload,
+                            timing=timing_payload,
                             ai_check=post_advice.model_dump() if post_advice else None,
                         )
                     )
@@ -422,6 +451,8 @@ class ExecutionEngine:
                             step_id=step.id,
                             step_type=step.type.value,
                             error=str(error),
+                            locator=locator_payload,
+                            timing=timing_payload,
                             ai_check=post_advice.model_dump() if post_advice else None,
                             ai_assist=assist_advice.model_dump() if assist_advice else None,
                         )
@@ -439,6 +470,8 @@ class ExecutionEngine:
                             step_id=step.id,
                             step_type=step.type.value,
                             error=str(error),
+                            locator=locator_payload,
+                            timing=timing_payload,
                             ai_check=post_advice.model_dump() if post_advice else None,
                             ai_assist=assist_advice.model_dump() if assist_advice else None,
                         )
@@ -453,6 +486,8 @@ class ExecutionEngine:
                             step_id=step.id,
                             step_type=step.type.value,
                             error=str(error),
+                            locator=locator_payload,
+                            timing=timing_payload,
                             ai_check=post_advice.model_dump() if post_advice else None,
                             ai_assist=assist_advice.model_dump() if assist_advice else None,
                         )
@@ -468,6 +503,8 @@ class ExecutionEngine:
                             step_id=step.id,
                             step_type=step.type.value,
                             error=str(error),
+                            locator=locator_payload,
+                            timing=timing_payload,
                             ai_check=post_advice.model_dump() if post_advice else None,
                             ai_assist=assist_advice.model_dump() if assist_advice else None,
                         )
@@ -485,6 +522,8 @@ class ExecutionEngine:
                                 step_id=step.id,
                                 step_type=step.type.value,
                                 error=str(error),
+                                locator=locator_payload,
+                                timing=timing_payload,
                             )
                         )
                         return result
@@ -631,6 +670,8 @@ class ExecutionEngine:
         step_id: str | None = None,
         step_type: str | None = None,
         visual_comparison: dict | None = None,
+        locator: dict | None = None,
+        timing: dict | None = None,
         error: str | None = None,
         ai_check: dict | None = None,
         ai_assist: dict | None = None,
@@ -644,6 +685,8 @@ class ExecutionEngine:
             step_id=step_id,
             step_type=step_type,
             visual_comparison=visual_comparison,
+            locator=locator,
+            timing=timing,
             elapsed_ms=int((time.time() - (self._started_at or time.time())) * 1000),
             error=error,
             ai_check=ai_check,
@@ -730,6 +773,8 @@ class ExecutionEngine:
                 f"AI 自愈成功: {action.description}",
                 step_id=step.id,
                 step_type=step.type.value,
+                locator=self._locator_payload(result),
+                timing=self._timing_payload(result),
                 ai_assist=self._build_healing_assist_payload(
                     action,
                     result.step_log.error_message or "",
@@ -762,6 +807,8 @@ class ExecutionEngine:
                 summary,
                 step_id=step.id,
                 step_type=step.type.value,
+                locator=self._locator_payload(failed_result),
+                timing=self._timing_payload(failed_result),
                 error=error_msg,
                 ai_assist=self._build_healing_assist_payload(
                     action,
@@ -883,6 +930,8 @@ class ExecutionEngine:
                     f"AI 自愈尝试: {action.description} (预估成功率={action.estimated_success_rate:.0%})",
                     step_id=step.id,
                     step_type=step.type.value,
+                    locator=self._locator_payload(failed_result),
+                    timing=self._timing_payload(failed_result),
                     error=error_msg,
                     ai_assist=self._build_healing_assist_payload(
                         action,
@@ -1055,6 +1104,8 @@ class ExecutionEngine:
                         f"AI 无法自动修复: {error_msg[:100]}，需人工介入",
                         step_id=step.id,
                         step_type=step.type.value,
+                        locator=self._locator_payload(failed_result),
+                        timing=self._timing_payload(failed_result),
                         error=error_msg,
                     )
                 )

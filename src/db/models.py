@@ -93,6 +93,7 @@ class ExecutionStepModel(Base):
     screenshot_before = Column(Text, nullable=True)
     screenshot_after = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
+    metadata_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     execution = relationship("ExecutionModel", back_populates="steps")

@@ -5,6 +5,9 @@ import logging
 import re
 import time
 
+import httpx
+from openai import AsyncOpenAI
+
 from src.config import settings
 from src.models.vision import GroundingResult
 
@@ -28,9 +31,28 @@ _UI_TARS_SYSTEM = (
 class UITarsAdapter:
     def __init__(self, model_path: str | None = None, server_url: str | None = None):
         self._model_path = model_path or getattr(settings, "UI_TARS_MODEL_PATH", "")
-        self._server_url = server_url or getattr(settings, "UI_TARS_SERVER_URL", "http://localhost:8000/v1")
+        self._server_url = server_url or getattr(settings, "UI_TARS_SERVER_URL", "")
         self._loaded = False
         self._driver = None
+        self._client: AsyncOpenAI | None = None
+
+    @property
+    def _server_enabled(self) -> bool:
+        return bool(str(self._server_url or "").strip())
+
+    @property
+    def _server_model(self) -> str:
+        return self._model_path or "ui-tars"
+
+    @property
+    def client(self) -> AsyncOpenAI:
+        if self._client is None:
+            self._client = AsyncOpenAI(
+                base_url=self._server_url,
+                api_key="not-needed",
+                http_client=httpx.AsyncClient(trust_env=False),
+            )
+        return self._client
 
     async def _ensure_loaded(self):
         if self._loaded:
@@ -41,7 +63,44 @@ class UITarsAdapter:
         self._driver = engine
         self._loaded = True
 
-    async def ground_action(
+    async def _ground_action_server(
+        self,
+        screenshot_base64: str,
+        action_description: str,
+        action_type: str,
+        image_width: int = 1920,
+        image_height: int = 1080,
+    ) -> GroundingResult:
+        prompt = (
+            f"Task: Find the UI element for the following action.\n"
+            f"Action type: {action_type}\n"
+            f"Action description: {action_description}\n\n"
+            f"Locate the target element and provide its bounding box."
+        )
+
+        response = await self.client.chat.completions.create(
+            model=self._server_model,
+            messages=[
+                {"role": "system", "content": _UI_TARS_SYSTEM},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"},
+                        },
+                    ],
+                },
+            ],
+            temperature=0.2,
+            max_tokens=400,
+            stream=False,
+        )
+        text = response.choices[0].message.content or ""
+        return self._parse_ui_tars_result(text, action_type, action_description, image_width, image_height)
+
+    async def _ground_action_local(
         self,
         screenshot_base64: str,
         action_description: str,
@@ -58,14 +117,50 @@ class UITarsAdapter:
             f"Locate the target element and provide its bounding box."
         )
 
+        result = await self._driver.analyze_with_image(
+            prompt=prompt,
+            image_base64=screenshot_base64,
+        )
+        return self._parse_ui_tars_result(result.text, action_type, action_description, image_width, image_height)
+
+    async def ground_action(
+        self,
+        screenshot_base64: str,
+        action_description: str,
+        action_type: str,
+        image_width: int = 1920,
+        image_height: int = 1080,
+    ) -> GroundingResult:
         t0 = time.perf_counter()
+        last_error: Exception | None = None
+
+        if self._server_enabled:
+            try:
+                result = await self._ground_action_server(
+                    screenshot_base64,
+                    action_description,
+                    action_type,
+                    image_width,
+                    image_height,
+                )
+                latency_ms = (time.perf_counter() - t0) * 1000
+                logger.info("ui_tars remote ground_action latency=%.0fms type=%s", latency_ms, action_type)
+                return result
+            except Exception as e:
+                last_error = e
+                logger.warning("UI-TARS remote grounding failed, falling back to local runtime: %s", e)
+
         try:
-            result = await self._driver.analyze_with_image(
-                prompt=prompt,
-                image_base64=screenshot_base64,
+            result = await self._ground_action_local(
+                screenshot_base64,
+                action_description,
+                action_type,
+                image_width,
+                image_height,
             )
         except Exception as e:
             logger.warning("UI-TARS grounding failed: %s", e)
+            error_text = str(last_error or e)
             return GroundingResult(
                 found=False,
                 element_type=action_type,
@@ -73,13 +168,12 @@ class UITarsAdapter:
                 bbox_pixel=None,
                 bbox_normalized=None,
                 confidence=0.0,
-                reasoning=f"UI-TARS error: {e}",
+                reasoning=f"UI-TARS error: {error_text}",
             )
 
         latency_ms = (time.perf_counter() - t0) * 1000
         logger.info("ui_tars ground_action latency=%.0fms type=%s", latency_ms, action_type)
-
-        return self._parse_ui_tars_result(result.text, action_type, action_description, image_width, image_height)
+        return result
 
     async def ground_batch(
         self,

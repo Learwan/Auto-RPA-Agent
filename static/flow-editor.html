@@ -688,6 +688,8 @@ const IDLE_EXEC_STATUS = Object.freeze({
   currentStepId: null,
   latestAiCheck: null,
   latestAiAssist: null,
+  latestLocator: null,
+  latestTiming: null,
   aiSummary: null,
   healingCount: 0,
 });
@@ -1865,6 +1867,8 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
   const retryFailures = Math.max(failedLogs.length - failedSteps, 0);
   const latestAssist = runtimeAi?.latestAiAssist;
   const latestCheck = runtimeAi?.latestAiCheck;
+  const latestLocator = runtimeAi?.latestLocator;
+  const latestTiming = runtimeAi?.latestTiming;
   const summary = runtimeAi?.aiSummary;
   const titleText =
     status === 'running' ? '⚡ 执行中'
@@ -1880,6 +1884,43 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
     : status === 'partial' ? 'var(--accent-amber)'
     : status === 'completed' ? 'var(--accent-green)'
     : 'var(--accent-cyan)';
+
+  const formatTimingValue = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) return null;
+    if (numeric >= 1000) {
+      return `${(numeric / 1000).toFixed(numeric >= 10000 ? 0 : 1)}s`;
+    }
+    return `${Math.round(numeric)}ms`;
+  };
+
+  const timingMetrics = [
+    ['总耗时', latestTiming?.step_elapsed_ms],
+    ['定位', latestTiming?.locate_ms],
+    ['验证', latestTiming?.verify_ms],
+    ['窗口', latestTiming?.window_match_ms],
+    ['截图', latestTiming?.screenshot_capture_ms],
+  ].filter(([, value]) => formatTimingValue(value));
+
+  const timingCalls = [
+    ['定位', latestTiming?.locate_calls],
+    ['验证', latestTiming?.verify_calls],
+    ['窗口', latestTiming?.window_match_calls],
+    ['截图', latestTiming?.screenshot_capture_calls],
+  ].filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0);
+
+  const locatorProviders = Array.isArray(latestLocator?.attempted_providers)
+    ? latestLocator.attempted_providers.filter(Boolean)
+    : [];
+  const locatorProviderChain = Array.isArray(latestLocator?.provider_chain)
+    ? latestLocator.provider_chain.filter(Boolean)
+    : [];
+  const locatorFallbackChain = Array.isArray(latestLocator?.fallback_chain)
+    ? latestLocator.fallback_chain.filter(Boolean)
+    : [];
+  const locatorConfidence = Number.isFinite(Number(latestLocator?.confidence))
+    ? `${Math.round(Number(latestLocator.confidence) * 100)}%`
+    : null;
 
   return (
     <div className="execution-overlay">
@@ -1899,11 +1940,88 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
         </div>
       </div>
 
-      {(currentStepId || latestAssist || latestCheck || summary) && (
+      {(currentStepId || latestAssist || latestCheck || latestLocator || latestTiming || summary) && (
         <div style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px', display: 'grid', gap: '6px' }}>
           {currentStepId && (
             <div style={{ fontSize: '11px', color: 'var(--text-body)' }}>
               当前激活节点：<span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>{currentStepId}</span>
+            </div>
+          )}
+          {latestLocator && (
+            <div style={{
+              fontSize: '11px',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: latestLocator.healed ? 'rgba(245,158,11,0.10)' : 'rgba(53,108,159,0.08)',
+              borderLeft: `3px solid ${latestLocator.healed ? 'var(--accent-amber)' : 'var(--accent-blue)'}`,
+              display: 'grid',
+              gap: '4px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ fontWeight: '600' }}>定位遥测</div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {latestLocator.provider && (
+                    <span style={{ color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>
+                      {latestLocator.provider}
+                    </span>
+                  )}
+                  {latestLocator.healed && (
+                    <span style={{ color: 'var(--accent-amber)', fontWeight: '600' }}>已自愈</span>
+                  )}
+                  {locatorConfidence && (
+                    <span style={{ color: 'var(--text-dim)' }}>置信度 {locatorConfidence}</span>
+                  )}
+                </div>
+              </div>
+              {locatorProviderChain.length > 0 && (
+                <div style={{ color: 'var(--text-body)' }}>Provider 链路：{locatorProviderChain.join(' → ')}</div>
+              )}
+              {locatorProviders.length > 0 && (
+                <div style={{ color: 'var(--text-dim)' }}>尝试顺序：{locatorProviders.join(' → ')}</div>
+              )}
+              {locatorFallbackChain.length > 0 && (
+                <div style={{ color: 'var(--text-dim)' }}>Fallback：{locatorFallbackChain.join(' → ')}</div>
+              )}
+            </div>
+          )}
+          {latestTiming && timingMetrics.length > 0 && (
+            <div style={{
+              fontSize: '11px',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(33,108,100,0.08)',
+              borderLeft: '3px solid var(--accent-cyan)',
+              display: 'grid',
+              gap: '6px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ fontWeight: '600' }}>步骤耗时</div>
+                {formatTimingValue(latestTiming.step_elapsed_ms) && (
+                  <span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: '600' }}>
+                    {formatTimingValue(latestTiming.step_elapsed_ms)}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {timingMetrics.map(([label, value]) => (
+                  <span key={label} style={{
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    border: '1px solid rgba(33,108,100,0.18)',
+                    background: 'rgba(255,255,255,0.72)',
+                    color: 'var(--text-body)',
+                    fontSize: '10px',
+                    fontWeight: '600',
+                  }}>
+                    {label} {formatTimingValue(value)}
+                  </span>
+                ))}
+              </div>
+              {timingCalls.length > 0 && (
+                <div style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                  调用次数：{timingCalls.map(([label, value]) => `${label} ${value}次`).join(' · ')}
+                </div>
+              )}
             </div>
           )}
           {runtimeAi?.healingCount > 0 && (
@@ -2012,6 +2130,32 @@ function DebugPanel({ stepLogs, execStatus, runtimeAi, variables, onBreakpointTo
   ];
 
   const isRunning = execStatus?.status === 'running';
+  const formatTimingValue = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) return null;
+    if (numeric >= 1000) return `${(numeric / 1000).toFixed(numeric >= 10000 ? 0 : 1)}s`;
+    return `${Math.round(numeric)}ms`;
+  };
+  const latestTimingRows = [
+    ['总耗时', runtimeAi?.latestTiming?.step_elapsed_ms],
+    ['定位', runtimeAi?.latestTiming?.locate_ms],
+    ['验证', runtimeAi?.latestTiming?.verify_ms],
+    ['窗口匹配', runtimeAi?.latestTiming?.window_match_ms],
+    ['截图', runtimeAi?.latestTiming?.screenshot_capture_ms],
+  ].filter(([, value]) => formatTimingValue(value));
+  const latestTimingCalls = [
+    runtimeAi?.latestTiming?.locate_calls ? `定位 ${runtimeAi.latestTiming.locate_calls} 次` : null,
+    runtimeAi?.latestTiming?.verify_calls ? `验证 ${runtimeAi.latestTiming.verify_calls} 次` : null,
+    runtimeAi?.latestTiming?.window_match_calls ? `窗口 ${runtimeAi.latestTiming.window_match_calls} 次` : null,
+    runtimeAi?.latestTiming?.screenshot_capture_calls ? `截图 ${runtimeAi.latestTiming.screenshot_capture_calls} 次` : null,
+  ].filter(Boolean);
+  const latestLocatorRows = [
+    runtimeAi?.latestLocator?.provider ? `命中 Provider: ${runtimeAi.latestLocator.provider}` : null,
+    Number.isFinite(Number(runtimeAi?.latestLocator?.confidence)) ? `置信度: ${Math.round(Number(runtimeAi.latestLocator.confidence) * 100)}%` : null,
+    runtimeAi?.latestLocator?.healed ? '状态: 已自愈' : null,
+    Array.isArray(runtimeAi?.latestLocator?.attempted_providers) && runtimeAi.latestLocator.attempted_providers.length > 0 ? `尝试: ${runtimeAi.latestLocator.attempted_providers.join(' → ')}` : null,
+    Array.isArray(runtimeAi?.latestLocator?.fallback_chain) && runtimeAi.latestLocator.fallback_chain.length > 0 ? `Fallback: ${runtimeAi.latestLocator.fallback_chain.join(' → ')}` : null,
+  ].filter(Boolean);
 
   return React.createElement('div', { className: 'debug-panel', style: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '220px', background: 'var(--bg-deep)', borderTop: '2px solid var(--border)', display: 'flex', flexDirection: 'column', zIndex: 50 } },
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' } },
@@ -2030,15 +2174,38 @@ function DebugPanel({ stepLogs, execStatus, runtimeAi, variables, onBreakpointTo
       )
     ),
     React.createElement('div', { className: 'debug-content', style: { flex: 1, overflow: 'auto', padding: '8px', fontSize: '12px', fontFamily: 'monospace' } },
-      activeTab === 'logs' && stepLogs.map((log, i) => React.createElement('div', { key: i, style: { padding: '2px 4px', color: log.status === 'failed' ? 'var(--accent-red)' : log.status === 'success' ? 'var(--accent-green)' : 'var(--text-dim)' } },
-        `[${log.status?.toUpperCase() || 'PENDING'}] Step ${log.step_index ?? '-'}: ${log.step_type || '-'} - ${log.message || log.error || 'OK'}`
-      )),
+      activeTab === 'logs' && stepLogs.map((log, i) => {
+        const stepDuration = formatTimingValue(log.timing?.step_elapsed_ms ?? log.duration_ms);
+        const durationSuffix = stepDuration ? ` · ${stepDuration}` : '';
+        const locatorSuffix = log.locator?.provider ? ` · via ${log.locator.provider}` : '';
+        return React.createElement('div', { key: i, style: { padding: '2px 4px', color: log.status === 'failed' ? 'var(--accent-red)' : log.status === 'success' ? 'var(--accent-green)' : 'var(--text-dim)' } },
+          `[${log.status?.toUpperCase() || 'PENDING'}] Step ${log.step_index ?? '-'}: ${log.step_type || '-'}${durationSuffix}${locatorSuffix} - ${log.message || log.error || 'OK'}`
+        );
+      }),
       activeTab === 'ai' && React.createElement('div', { style: { display: 'grid', gap: '8px' } },
         React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
           React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '运行态'),
           React.createElement('div', null, `状态: ${execStatus?.status || 'idle'}`),
           React.createElement('div', null, `当前节点: ${execStatus?.currentStepId || '—'}`),
           React.createElement('div', null, `AI 自愈次数: ${runtimeAi?.healingCount || 0}`)
+        ),
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '最新定位'),
+          latestLocatorRows.length > 0
+            ? latestLocatorRows.map((line, index) => React.createElement('div', { key: index, style: { color: 'var(--text-body)', whiteSpace: 'pre-wrap' } }, line))
+            : React.createElement('div', { style: { color: 'var(--text-dim)', whiteSpace: 'pre-wrap' } }, '等待定位反馈后显示')
+        ),
+        React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
+          React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '最新耗时'),
+          latestTimingRows.length > 0
+            ? React.createElement(React.Fragment, null,
+                latestTimingRows.map(([label, value]) => React.createElement('div', { key: label, style: { display: 'flex', justifyContent: 'space-between', gap: '8px', color: 'var(--text-body)' } },
+                  React.createElement('span', null, label),
+                  React.createElement('span', { style: { color: 'var(--accent-cyan)' } }, formatTimingValue(value))
+                )),
+                latestTimingCalls.length > 0 && React.createElement('div', { style: { color: 'var(--text-dim)', marginTop: '6px', whiteSpace: 'pre-wrap' } }, latestTimingCalls.join(' · '))
+              )
+            : React.createElement('div', { style: { color: 'var(--text-dim)', whiteSpace: 'pre-wrap' } }, '等待步骤执行后显示')
         ),
         React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
           React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '最新 AI Check'),
@@ -2629,13 +2796,18 @@ function App() {
             status: normalizeStepStatus(log.status),
             error: log.error || log.error_message || '',
             message: log.message || log.error || '',
-            duration_ms: log.duration_ms || 0,
+            duration_ms: log.metadata?.timing?.step_elapsed_ms || log.duration_ms || ((log.completed_at && log.started_at) ? (log.completed_at - log.started_at) * 1000 : 0),
             timestamp: log.timestamp || new Date().toISOString(),
             attempt,
+            locator: log.metadata?.locator || null,
+            timing: log.metadata?.timing || null,
             output: log.output || null,
             screenshot: log.screenshot_after || log.screenshot_before || null,
           };
         });
+
+        const latestLocator = [...rawLogs].reverse().find(log => log?.metadata?.locator)?.metadata?.locator || null;
+        const latestTiming = [...rawLogs].reverse().find(log => log?.metadata?.timing)?.metadata?.timing || null;
 
         if (normalizedLogs.length > 0) {
           setStepLogs(normalizedLogs);
@@ -2662,6 +2834,8 @@ function App() {
           currentStep: record?.completed_steps || totalSteps,
           totalSteps,
           currentStepId: null,
+          latestLocator,
+          latestTiming,
           aiSummary: record?.ai_summary || prev.aiSummary || null,
         }));
         setWatchedVars(record?.variables || {});
@@ -2766,10 +2940,12 @@ function App() {
             status: normalizedStatus,
             error: data.error || '',
             message: data.step_description || '',
-            duration_ms: data.elapsed_ms || 0,
+            duration_ms: data.timing?.step_elapsed_ms || 0,
             timestamp: new Date().toISOString(),
             ai_check: data.ai_check || null,
             ai_assist: data.ai_assist || null,
+            locator: data.locator || null,
+            timing: data.timing || null,
           });
 
           if (stepId) {
@@ -2788,22 +2964,36 @@ function App() {
             }
           }
 
-          setExecStatus(prev => ({
-            ...prev,
-            status: stepStatus === 'failed'
-              ? 'failed'
-              : stepStatus === 'paused'
-                ? 'paused'
-                : prev.status === 'failed'
-                  ? prev.status
-                  : 'running',
-            currentStep: data.current_step || prev.currentStep,
-            totalSteps: data.total_steps || prev.totalSteps,
-            currentStepId: stepId || prev.currentStepId,
-            latestAiCheck: data.ai_check || prev.latestAiCheck,
-            latestAiAssist: data.ai_assist || prev.latestAiAssist,
-            healingCount: prev.healingCount + (isHealing ? 1 : 0),
-          }));
+          setExecStatus(prev => {
+            const nextCurrentStep = data.current_step || prev.currentStep;
+            const stepChanged = nextCurrentStep !== prev.currentStep;
+            return {
+              ...prev,
+              status: stepStatus === 'failed'
+                ? 'failed'
+                : stepStatus === 'paused'
+                  ? 'paused'
+                  : prev.status === 'failed'
+                    ? prev.status
+                    : 'running',
+              currentStep: nextCurrentStep,
+              totalSteps: data.total_steps || prev.totalSteps,
+              currentStepId: stepId || prev.currentStepId,
+              latestAiCheck: data.ai_check || prev.latestAiCheck,
+              latestAiAssist: data.ai_assist || prev.latestAiAssist,
+              latestLocator: data.locator && typeof data.locator === 'object'
+                ? data.locator
+                : stepChanged
+                  ? null
+                  : prev.latestLocator,
+              latestTiming: data.timing && typeof data.timing === 'object'
+                ? data.timing
+                : stepChanged
+                  ? null
+                  : prev.latestTiming,
+              healingCount: prev.healingCount + (isHealing ? 1 : 0),
+            };
+          });
         };
 
         socket.onerror = () => finish(new Error('执行反馈连接失败'));

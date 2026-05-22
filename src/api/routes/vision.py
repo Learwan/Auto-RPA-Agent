@@ -80,6 +80,7 @@ def _handle_vision_error(e: Exception) -> HTTPException:
 @router.get("/status")
 async def vision_status():
     runtime = LocalLLMEngine.get_runtime_snapshot()
+    grounding = GUIGroundingEngine().get_runtime_status()
     return {
         "enabled": settings.VISION_ENABLED,
         "configured": bool(settings.LOCAL_LLM_ENABLED),
@@ -91,6 +92,7 @@ async def vision_status():
         "resolved_engine": runtime["resolved_engine"],
         "grounding_threshold": settings.VISION_GROUNDING_CONFIDENCE_THRESHOLD,
         "cache_enabled": settings.VISION_CACHE_ENABLED,
+        "grounding": grounding,
     }
 
 

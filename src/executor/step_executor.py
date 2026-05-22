@@ -14,6 +14,7 @@ from src.executor.element_locator import ElementLocator, LocatedElement
 from src.executor.screenshot_comparator import ScreenshotComparator
 from src.executor.step_verifier import StepVerifier
 from src.models.automation import AutomationStep, LocateStrategy, StepCondition, StepTarget, StepType
+from src.models.desktop import UIElement
 from src.models.execution import ExecutionStepLog, StepStatus, VerificationLevel
 from src.platform.base import BasePlatformAdapter
 
@@ -160,6 +161,88 @@ class StepExecutor:
     def safety_controller(self) -> SafetyController:
         return self._safety
 
+    @staticmethod
+    def _attach_locator_metadata(step_log: ExecutionStepLog, located_element: LocatedElement | None) -> None:
+        if located_element is None:
+            return
+        step_log.metadata = dict(step_log.metadata or {})
+        step_log.metadata["locator"] = located_element.telemetry()
+
+    @staticmethod
+    def _timing_metadata(step_log: ExecutionStepLog) -> dict:
+        step_log.metadata = dict(step_log.metadata or {})
+        timing = step_log.metadata.get("timing")
+        if not isinstance(timing, dict):
+            timing = {}
+            step_log.metadata["timing"] = timing
+        return timing
+
+    @classmethod
+    def _record_timing(
+        cls,
+        step_log: ExecutionStepLog,
+        key: str,
+        elapsed_ms: float,
+        *,
+        count_key: str | None = None,
+    ) -> None:
+        timing = cls._timing_metadata(step_log)
+        timing[key] = round(float(timing.get(key, 0.0)) + elapsed_ms, 3)
+        if count_key:
+            timing[count_key] = int(timing.get(count_key, 0)) + 1
+
+    async def _take_screenshot_for_step(self, step_log: ExecutionStepLog, label: str) -> bytes | None:
+        started_at = time.perf_counter()
+        try:
+            return await self._take_screenshot()
+        finally:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            self._record_timing(
+                step_log,
+                "screenshot_capture_ms",
+                elapsed_ms,
+                count_key="screenshot_capture_calls",
+            )
+            self._record_timing(step_log, f"{label}_ms", elapsed_ms)
+
+    async def _locate_for_step(self, step_log: ExecutionStepLog, target: StepTarget) -> LocatedElement | None:
+        started_at = time.perf_counter()
+        try:
+            return await self._locator.locate(target)
+        finally:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            self._record_timing(step_log, "locate_ms", elapsed_ms, count_key="locate_calls")
+
+    async def _verify_for_step(
+        self,
+        step_log: ExecutionStepLog,
+        target: StepTarget,
+        located: LocatedElement,
+        strict: bool,
+    ):
+        started_at = time.perf_counter()
+        try:
+            return await self._verifier.verify(target, located=located, strict=strict)
+        finally:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            self._record_timing(step_log, "verify_ms", elapsed_ms, count_key="verify_calls")
+
+    async def _resolve_window_match_for_step(
+        self,
+        step_log: ExecutionStepLog,
+        target: StepTarget,
+        action: dict,
+    ):
+        started_at = time.perf_counter()
+        try:
+            active_window = await self._get_active_window()
+            if self._window_matches_target(active_window, target, action):
+                return active_window
+            return await self._find_matching_window(target, action)
+        finally:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            self._record_timing(step_log, "window_match_ms", elapsed_ms, count_key="window_match_calls")
+
     async def execute_step(
         self, step: AutomationStep, variables: dict, execution_id: str, step_index: int
     ) -> StepResult:
@@ -173,11 +256,12 @@ class StepExecutor:
             started_at=time.time(),
         )
 
-        screenshot_before = await self._take_screenshot()
+        screenshot_before = await self._take_screenshot_for_step(step_log, "screenshot_before") if self._enable_visual_verify else None
         visual_comparison = None
         verification_dict = None
         located_element = None
         control_flow_output = None
+        matched_window = None
         resolved_action = self._resolve_variables(step.action, variables)
 
         try:
@@ -221,7 +305,12 @@ class StepExecutor:
                 if self._is_web_target(step.target) and self._adapter.get_platform_name() == "web":
                     pass
                 elif step.type == StepType.SWITCH_WINDOW or self._is_window_target(step.target, resolved_action):
-                    if await self._find_matching_window(step.target, resolved_action) is None:
+                    matched_window = await self._resolve_window_match_for_step(
+                        step_log,
+                        step.target,
+                        resolved_action,
+                    )
+                    if matched_window is None:
                         recovered = await self.recover_window_context(
                             step,
                             variables,
@@ -235,12 +324,13 @@ class StepExecutor:
                                 f"执行前验证失败: 窗口未找到 ({self._describe_window_target(step.target, resolved_action)})"
                             )
                 else:
-                    located_element = await self._locator.locate(step.target)
+                    located_element = await self._locate_for_step(step_log, step.target)
                     if located_element is not None:
-                        verification = await self._verifier.verify(
+                        verification = await self._verify_for_step(
+                            step_log,
                             step.target,
-                            located=located_element,
-                            strict=step.verification_strict,
+                            located_element,
+                            step.verification_strict,
                         )
                         verification_dict = verification.model_dump()
 
@@ -254,7 +344,7 @@ class StepExecutor:
                     elif step.target.strategy != LocateStrategy.POSITION:
                         raise RuntimeError(f"执行前验证失败: 元素未找到 (策略={step.target.strategy.value})")
 
-            await self._ensure_window_context(step, resolved_action)
+            await self._ensure_window_context(step, resolved_action, matched_window=matched_window)
             await self._ensure_preconditions(step, resolved_action, variables)
 
             if step.type == StepType.CONDITION:
@@ -264,7 +354,14 @@ class StepExecutor:
                     raise RuntimeError(f"Condition not met for step {step.id}")
             else:
                 handler = self._get_handler(step.type)
-                await handler(step, resolved_action)
+                if step.type in (StepType.CLICK, StepType.TYPE):
+                    handler_located = await handler(step, resolved_action, located_element)
+                elif step.type == StepType.SWITCH_WINDOW:
+                    handler_located = await handler(step, resolved_action, matched_window)
+                else:
+                    handler_located = await handler(step, resolved_action)
+                if handler_located is not None:
+                    located_element = handler_located
 
             await self._ensure_postconditions(step, resolved_action, variables)
 
@@ -282,8 +379,15 @@ class StepExecutor:
                 logger.info(f"Step {step.id}: missing-window failure ignored by safety controller")
         finally:
             step_log.completed_at = time.time()
+            if step_log.started_at is not None and step_log.completed_at is not None:
+                self._record_timing(
+                    step_log,
+                    "step_elapsed_ms",
+                    (step_log.completed_at - step_log.started_at) * 1000,
+                )
             step_log.verification_result = verification_dict
-            screenshot_after = await self._take_screenshot()
+            screenshot_after = await self._take_screenshot_for_step(step_log, "screenshot_after") if self._enable_visual_verify else None
+            self._attach_locator_metadata(step_log, located_element)
 
             if self._comparator and screenshot_before and screenshot_after and step_log.status == StepStatus.SUCCESS:
                 try:
@@ -331,6 +435,7 @@ class StepExecutor:
 
         verification_dict = None
         control_flow_output = None
+        located_element = None
 
         try:
             resolved_action = self._resolve_variables(step.action, variables)
@@ -345,14 +450,18 @@ class StepExecutor:
                 else:
                     step_log.status = StepStatus.SUCCESS
             elif step.target and step.target.strategy != LocateStrategy.POSITION:
-                located = await self._locator.locate(step.target)
+                located = await self._locate_for_step(step_log, step.target)
+                located_element = located
                 if not located:
                     step_log.status = StepStatus.FAILED
                     step_log.error_message = f"Target element not found via {step.target.strategy.value}"
                 else:
                     if step.verification_enabled:
-                        verification = await self._verifier.verify(
-                            step.target, located=located, strict=step.verification_strict
+                        verification = await self._verify_for_step(
+                            step_log,
+                            step.target,
+                            located,
+                            step.verification_strict,
                         )
                         verification_dict = verification.model_dump()
                         if not verification.can_proceed:
@@ -369,13 +478,21 @@ class StepExecutor:
             step_log.error_message = str(e)
         finally:
             step_log.completed_at = time.time()
+            if step_log.started_at is not None and step_log.completed_at is not None:
+                self._record_timing(
+                    step_log,
+                    "step_elapsed_ms",
+                    (step_log.completed_at - step_log.started_at) * 1000,
+                )
             step_log.verification_result = verification_dict
+            self._attach_locator_metadata(step_log, located_element)
 
         return StepResult(
             success=step_log.status == StepStatus.SUCCESS,
             step_log=step_log,
             control_flow_output=control_flow_output,
             verification_result=verification_dict,
+            located_element=located_element,
         )
 
     def _get_handler(self, step_type: StepType):
@@ -396,14 +513,20 @@ class StepExecutor:
         }
         return handlers.get(step_type, self._execute_unknown)
 
-    async def _execute_click(self, step: AutomationStep, action: dict) -> None:
+    async def _execute_click(
+        self,
+        step: AutomationStep,
+        action: dict,
+        located: LocatedElement | None = None,
+    ) -> LocatedElement | None:
         click_target = getattr(self._adapter, "click_target", None)
         if self._is_web_target(step.target) and callable(click_target):
             await click_target(step.target, action)
-            return
+            return None
 
         fallback_position = None
-        located = await self._locator.locate(step.target)
+        if located is None or not located.center:
+            located = await self._locator.locate(step.target)
         if not located or not located.center:
             target = step.target
             if (
@@ -418,6 +541,18 @@ class StepExecutor:
                 if not self._safety.check_random_click_pattern(x, y):
                     raise RuntimeError("安全控制：检测到随机点击模式，操作已中止")
                 fallback_position = (x, y)
+                element = UIElement(
+                    role="position_fallback",
+                    title=f"Coordinate fallback ({x}, {y})",
+                    bounds=None,
+                )
+                located = LocatedElement(
+                    element=element,
+                    strategy_used=LocateStrategy.POSITION,
+                    position=target.position,
+                    confidence=0.4,
+                    provider="coordinates",
+                )
             elif (
                 target
                 and target.strategy == LocateStrategy.POSITION
@@ -453,11 +588,17 @@ class StepExecutor:
             pyautogui.doubleClick(x, y)
         else:
             pyautogui.click(x, y, clicks=clicks)
+        return located
 
-    async def _execute_type(self, step: AutomationStep, action: dict) -> None:
+    async def _execute_type(
+        self,
+        step: AutomationStep,
+        action: dict,
+        located: LocatedElement | None = None,
+    ) -> LocatedElement | None:
         text = action.get("text", "")
         if not text:
-            return
+            return None
 
         if not self._safety.check_random_keyboard_pattern(text):
             raise RuntimeError("安全控制：检测到随机键盘输入模式，操作已中止")
@@ -465,12 +606,13 @@ class StepExecutor:
         type_text_target = getattr(self._adapter, "type_text_target", None)
         if self._is_web_target(step.target) and callable(type_text_target):
             await type_text_target(step.target, action)
-            return
+            return None
 
         import pyautogui
 
         if step.target and step.target.strategy != LocateStrategy.POSITION:
-            located = await self._locator.locate(step.target)
+            if located is None or not located.center:
+                located = await self._locator.locate(step.target)
             if located and located.center:
                 x, y = located.center.x, located.center.y
                 if not await self._safety.check_coordinate_safety(x, y):
@@ -491,6 +633,7 @@ class StepExecutor:
             except ImportError:
                 for char in text:
                     pyautogui.press(char)
+        return located
 
     async def _execute_hotkey(self, step: AutomationStep, action: dict) -> None:
         press_hotkey = getattr(self._adapter, "press_hotkey", None)
@@ -541,13 +684,17 @@ class StepExecutor:
         pyautogui.moveTo(start_x, start_y)
         pyautogui.drag(end_x - start_x, end_y - start_y, duration=duration)
 
-    async def _execute_switch_window(self, step: AutomationStep, action: dict) -> None:
+    async def _execute_switch_window(self, step: AutomationStep, action: dict, matched_window=None) -> None:
         window_title = self._resolve_window_title(step.target, action)
         target_url = self._resolve_window_url(step.target, action)
         if not window_title and not target_url:
             raise RuntimeError("No window title or URL specified for switch_window")
 
-        target_window = await self._find_matching_window(step.target, action)
+        active_window = await self._get_active_window()
+        if self._window_matches_target(active_window, step.target, action):
+            return
+
+        target_window = matched_window or await self._find_matching_window(step.target, action)
         if not target_window:
             raise RuntimeError(f"Window not found: {window_title or target_url}")
 
@@ -616,18 +763,22 @@ class StepExecutor:
     async def _execute_condition(self, step: AutomationStep, action: dict) -> None:
         return
 
-    async def _execute_loop(self, step: AutomationStep, action: dict) -> None:
+    async def _execute_loop(self, step: AutomationStep, action: dict) -> LocatedElement | None:
         max_iterations = action.get("max_iterations", 10)
         delay_ms = action.get("delay_ms", 1000)
         condition_type = action.get("condition_type", "count")
+        last_located = None
 
         if condition_type == "count" or condition_type == "element_exists" or condition_type == "element_gone":
             for _i in range(max_iterations):
                 if step.target:
                     located = await self._locator.locate(step.target)
+                    if located is not None:
+                        last_located = located
                     if not located:
                         break
                 await asyncio.sleep(delay_ms / 1000.0)
+        return last_located
 
     async def recover_window_context(
         self,
@@ -640,12 +791,12 @@ class StepExecutor:
         deadline = time.time() + max(timeout_ms, 200) / 1000.0
 
         while time.time() <= deadline:
+            active_window = await self._get_active_window()
+            if self._window_matches_target(active_window, step.target, resolved_action):
+                return True
+
             matched_window = await self._find_matching_window(step.target, resolved_action)
             if matched_window is not None:
-                active_window = await self._get_active_window()
-                if self._window_matches_target(active_window, step.target, resolved_action):
-                    return True
-
                 activate_window = getattr(self._adapter, "activate_window", None)
                 if callable(activate_window):
                     activated = await activate_window(matched_window)
@@ -741,19 +892,19 @@ class StepExecutor:
                     f"{precondition.value}"
                 )
 
-    async def _ensure_window_context(self, step: AutomationStep, action: dict) -> None:
+    async def _ensure_window_context(self, step: AutomationStep, action: dict, matched_window=None) -> None:
         if not self._requires_window_context(step, action):
             return
-
-        matched_window = await self._find_matching_window(step.target, action)
-        if matched_window is None:
-            raise RuntimeError(
-                f"执行前安全检查失败: 目标窗口不可用 ({self._describe_window_target(step.target, action)})"
-            )
 
         active_window = await self._get_active_window()
         if self._window_matches_target(active_window, step.target, action):
             return
+
+        matched_window = matched_window or await self._find_matching_window(step.target, action)
+        if matched_window is None:
+            raise RuntimeError(
+                f"执行前安全检查失败: 目标窗口不可用 ({self._describe_window_target(step.target, action)})"
+            )
 
         activate_window = getattr(self._adapter, "activate_window", None)
         if callable(activate_window):
@@ -1017,6 +1168,9 @@ class StepExecutor:
         return self._resolve_window_title(target, action) or self._resolve_window_url(target, action) or "unknown"
 
     async def _window_exists(self, target: StepTarget | None, action: dict | None = None) -> bool:
+        active_window = await self._get_active_window()
+        if self._window_matches_target(active_window, target, action):
+            return True
         return await self._find_matching_window(target, action) is not None
 
     async def _find_matching_window(self, target: StepTarget | None, action: dict | None = None):
@@ -1026,6 +1180,21 @@ class StepExecutor:
             return None
 
         windows = await self._adapter.get_windows()
+        title_candidates = self._window_title_candidates(window_title)
+
+        for window in windows:
+            if self._url_match_score(target_url, getattr(window, "url", None)) == 1.0:
+                return window
+
+            title = getattr(window, "title", None)
+            app_name = getattr(window, "app_name", None)
+            for candidate in title_candidates:
+                if (
+                    self._window_text_match_score(candidate, title) == 1.0
+                    or self._window_text_match_score(candidate, app_name) == 1.0
+                ):
+                    return window
+
         best_window = None
         best_score = 0.0
         for window in windows:

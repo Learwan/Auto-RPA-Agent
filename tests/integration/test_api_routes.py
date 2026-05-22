@@ -36,7 +36,17 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "grounding_engine" in data
+        assert "grounding_runtime" in data
         assert "recorders" in data
+
+    def test_vision_status_includes_grounding_runtime(self):
+        client = _client()
+        resp = client.get("/api/vision/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "grounding" in data
+        assert "preferred_backend" in data["grounding"]
+        assert "status" in data["grounding"]
 
     def test_startup_check(self, monkeypatch):
         class _FakeStore:
@@ -65,6 +75,7 @@ class TestHealthEndpoint:
         assert data["effective_llm"]["source"] == "settings"
         assert data["effective_llm"]["remote"]["configured"] is True
         assert data["effective_llm"]["remote"]["api_key_masked"].startswith("supe")
+        assert "grounding" in data["effective_llm"]["vision"]
         assert any(section["id"] == "ai" for section in data["sections"])
 
 

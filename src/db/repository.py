@@ -293,6 +293,7 @@ class Repository:
                     screenshot_before=step.screenshot_before,
                     screenshot_after=step.screenshot_after,
                     error_message=step.error_message,
+                    metadata_json=json.dumps(step.metadata) if step.metadata else None,
                 )
                 for step in record.step_logs
             ]
@@ -414,22 +415,31 @@ class Repository:
             else None
         )
 
-        step_logs = [
-            ExecutionStepLog(
-                id=step.id,
-                execution_id=step.execution_id,
-                step_id=step.step_id,
-                step_type=step.step_type,
-                step_index=step.step_index,
-                status=StepStatus(step.status),
-                started_at=self._to_timestamp(step.started_at),
-                completed_at=self._to_timestamp(step.completed_at),
-                screenshot_before=step.screenshot_before,
-                screenshot_after=step.screenshot_after,
-                error_message=step.error_message,
+        step_logs = []
+        for step in step_models:
+            metadata = {}
+            if step.metadata_json:
+                try:
+                    parsed = json.loads(step.metadata_json)
+                    metadata = parsed if isinstance(parsed, dict) else {}
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode execution step metadata for %s", step.id)
+            step_logs.append(
+                ExecutionStepLog(
+                    id=step.id,
+                    execution_id=step.execution_id,
+                    step_id=step.step_id,
+                    step_type=step.step_type,
+                    step_index=step.step_index,
+                    status=StepStatus(step.status),
+                    started_at=self._to_timestamp(step.started_at),
+                    completed_at=self._to_timestamp(step.completed_at),
+                    screenshot_before=step.screenshot_before,
+                    screenshot_after=step.screenshot_after,
+                    error_message=step.error_message,
+                    metadata=metadata,
+                )
             )
-            for step in step_models
-        ]
 
         return ExecutionRecord(
             id=model.id,
@@ -441,7 +451,7 @@ class Repository:
             completed_steps=model.completed_steps or 0,
             failed_steps=model.failed_steps or 0,
             error_summary=model.error_summary,
-            variables=user_variables,
+            variables=user_variables or {},
             step_logs=step_logs,
             ai_summary=ExecutionSummary.model_validate(ai_meta["summary"]) if ai_meta.get("summary") else None,
             ai_step_insights=ai_meta.get("step_insights"),

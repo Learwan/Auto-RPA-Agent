@@ -693,7 +693,7 @@ const DEFAULT_MODAL_CLASS = 'console-modal-shell';
 const WIDE_MODAL_CLASS = 'glass rounded-2xl shadow-2xl w-full max-w-[1280px] mx-4 h-[88vh] overflow-hidden flex flex-col';
 const FLOW_STEP_TYPES = ['click', 'type', 'scroll', 'wait', 'switch_window', 'file_op', 'navigate', 'upload_file', 'download_file', 'condition', 'loop', 'hotkey', 'drag'];
 const FLOW_ERROR_ACTIONS = ['retry', 'skip', 'abort', 'ask_user', 'fallback', 'relocate', 'adjust_and_retry'];
-let executionLiveState = { executionId: null, status: null, currentStep: 0, totalSteps: 0, items: [], summary: null };
+let executionLiveState = { executionId: null, status: null, currentStep: 0, totalSteps: 0, items: [], summary: null, locator: null, timing: null };
 let executionAssistPromptKeys = new Set();
 const FLOW_EDITOR = {
   flow: null,
@@ -1208,8 +1208,83 @@ function renderExecutionAiSummary(summary) {
   `;
 }
 
+function formatTimingMs(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return '';
+  if (numeric >= 1000) {
+    return `${(numeric / 1000).toFixed(numeric >= 10000 ? 0 : 1)}s`;
+  }
+  return `${Math.round(numeric)}ms`;
+}
+
+function renderExecutionLocatorSummary(locator, options = {}) {
+  if (!locator || typeof locator !== 'object') return '';
+  const compact = options.compact === true;
+  const attemptedProviders = Array.isArray(locator.attempted_providers) ? locator.attempted_providers.filter(Boolean) : [];
+  const providerChain = Array.isArray(locator.provider_chain) ? locator.provider_chain.filter(Boolean) : [];
+  const fallbackChain = Array.isArray(locator.fallback_chain) ? locator.fallback_chain.filter(Boolean) : [];
+  const confidence = Number.isFinite(Number(locator.confidence)) ? `${Math.round(Number(locator.confidence) * 100)}%` : '';
+  const center = locator.center && Number.isFinite(Number(locator.center.x)) && Number.isFinite(Number(locator.center.y))
+    ? `${Math.round(Number(locator.center.x))}, ${Math.round(Number(locator.center.y))}`
+    : '';
+
+  if (!locator.provider && !attemptedProviders.length && !providerChain.length && !fallbackChain.length && !confidence && !center && !locator.healed) {
+    return '';
+  }
+
+  return `
+    <div class="${compact ? 'rounded-[14px] border border-stone-200/70 bg-stone-100/55 p-2.5' : 'mb-3 rounded-[18px] border border-blue-500/15 bg-blue-500/5 p-3'}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-[9px] font-bold uppercase tracking-wider ${compact ? 'text-stone-500' : 'text-blue-500'}">${compact ? '定位链路' : '当前定位链路'}</p>
+        <div class="flex flex-wrap items-center justify-end gap-2 text-[10px] font-semibold">
+          ${locator.provider ? `<span class="text-blue-500">${escapeHTML(String(locator.provider))}</span>` : ''}
+          ${locator.healed ? '<span class="text-amber-500">已自愈</span>' : ''}
+          ${confidence ? `<span class="text-stone-500">置信度 ${escapeHTML(confidence)}</span>` : ''}
+        </div>
+      </div>
+      ${providerChain.length ? `<p class="mt-2 text-[10px] font-semibold text-stone-600">Provider 链路: ${providerChain.map(item => escapeHTML(String(item))).join(' → ')}</p>` : ''}
+      ${attemptedProviders.length ? `<p class="mt-1 text-[10px] font-semibold text-stone-500">尝试顺序: ${attemptedProviders.map(item => escapeHTML(String(item))).join(' → ')}</p>` : ''}
+      ${fallbackChain.length ? `<p class="mt-1 text-[10px] font-semibold text-stone-500">Fallback: ${fallbackChain.map(item => escapeHTML(String(item))).join(' → ')}</p>` : ''}
+      ${center ? `<p class="mt-1 text-[10px] font-semibold text-stone-400">中心点: ${escapeHTML(center)}</p>` : ''}
+    </div>
+  `;
+}
+
+function renderExecutionTimingSummary(timing, options = {}) {
+  if (!timing || typeof timing !== 'object') return '';
+  const compact = options.compact === true;
+
+  const metrics = [
+    ['总耗时', timing.step_elapsed_ms],
+    ['定位', timing.locate_ms],
+    ['验证', timing.verify_ms],
+    ['截图', timing.screenshot_capture_ms],
+    ['窗口匹配', timing.window_match_ms],
+  ].filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 0);
+
+  const calls = [
+    ['定位', timing.locate_calls],
+    ['验证', timing.verify_calls],
+    ['截图', timing.screenshot_capture_calls],
+    ['窗口匹配', timing.window_match_calls],
+  ].filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0);
+
+  if (!metrics.length && !calls.length) return '';
+
+  return `
+    <div class="${compact ? 'rounded-[14px] border border-stone-200/70 bg-stone-100/55 p-2.5' : 'mb-3 rounded-[18px] border border-cyan-500/15 bg-cyan-500/5 p-3'}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-[9px] font-bold uppercase tracking-wider ${compact ? 'text-stone-500' : 'text-cyan-500'}">${compact ? '步骤耗时' : '当前步骤耗时'}</p>
+        ${timing.step_elapsed_ms ? `<span class="console-badge console-badge-info">${escapeHTML(formatTimingMs(timing.step_elapsed_ms))}</span>` : ''}
+      </div>
+      ${metrics.length ? `<div class="mt-2 flex flex-wrap gap-2">${metrics.map(([label, value]) => `<span class="rounded-full border border-cyan-500/15 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-stone-600">${escapeHTML(label)} ${escapeHTML(formatTimingMs(value))}</span>`).join('')}</div>` : ''}
+      ${calls.length ? `<p class="mt-2 text-[10px] font-semibold text-stone-500">调用次数: ${calls.map(([label, value]) => `${escapeHTML(label)} ${escapeHTML(String(value))}次`).join(' · ')}</p>` : ''}
+    </div>
+  `;
+}
+
 function resetExecutionLiveState(executionId = null) {
-  executionLiveState = { executionId, status: null, currentStep: 0, totalSteps: 0, items: [], summary: null };
+  executionLiveState = { executionId, status: null, currentStep: 0, totalSteps: 0, items: [], summary: null, locator: null, timing: null };
   if (!executionId) executionAssistPromptKeys = new Set();
   updateExecutionLivePanel();
 }
@@ -1263,7 +1338,7 @@ function updateExecutionLivePanel() {
   if (!executionLiveState.executionId && !executionLiveState.summary) {
     el.innerHTML = `
       <p class="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">执行协助面板</p>
-      <p class="text-xs text-stone-400 font-semibold">执行开始后，这里会显示本地 AI 检查、协助执行建议和本轮优化提示。</p>
+      <p class="text-xs text-stone-400 font-semibold">执行开始后，这里会显示定位链路、步骤耗时、AI 检查、协助执行建议和本轮优化提示。</p>
     `;
     return;
   }
@@ -1276,6 +1351,8 @@ function updateExecutionLivePanel() {
       ${executionLiveState.summary ? `<span class="${executionLiveState.summary.local_ai_used ? 'console-badge console-badge-info' : 'console-badge console-badge-neutral'}">${executionLiveState.summary.local_ai_used ? 'Local AI' : 'Rules'}</span>` : ''}
     </div>
     ${executionLiveState.summary ? `<div class="mb-3">${renderExecutionAiSummary(executionLiveState.summary)}</div>` : ''}
+    ${renderExecutionLocatorSummary(executionLiveState.locator)}
+    ${renderExecutionTimingSummary(executionLiveState.timing)}
     <div class="space-y-2">
       ${liveItems.length ? liveItems.map(item => renderExecutionAdviceCard(item.advice, item.kind === 'assist' ? `协助执行 · ${item.step}/${item.total}` : `AI 检查 · ${item.step}/${item.total}`)).join('') : '<p class="text-[11px] text-stone-400 font-semibold">等待当前执行的 AI 检查反馈...</p>'}
     </div>
@@ -3436,11 +3513,16 @@ function subscribeExecutionFeedback(executionId) {
         if (data.type === 'completed') {
           const record = await fetchExecutionSnapshot(executionId);
           const execution = record || { id: executionId, status: 'completed' };
+          const finalStepLogs = Array.isArray(execution.step_logs) ? execution.step_logs : [];
+          const finalLocator = [...finalStepLogs].reverse().find(item => item?.metadata?.locator)?.metadata?.locator || null;
+          const finalTiming = [...finalStepLogs].reverse().find(item => item?.metadata?.timing)?.metadata?.timing || null;
           const executionState = getExecutionPresentation(execution);
           WF.setExecution(executionId, execution.status || 'completed', execution);
           executionLiveState.executionId = executionId;
           executionLiveState.status = execution.status || 'completed';
           executionLiveState.summary = execution.ai_summary || null;
+          executionLiveState.locator = finalLocator || executionLiveState.locator;
+          executionLiveState.timing = finalTiming || executionLiveState.timing;
           updateExecutionLivePanel();
           loadExecutions();
           showNextStep(
@@ -3452,6 +3534,7 @@ function subscribeExecutionFeedback(executionId) {
           return;
         }
         if (data.step_status) {
+          const previousStep = executionLiveState.currentStep || 0;
           const step = data.current_step || 0;
           const total = data.total_steps || 0;
           const status = data.step_status;
@@ -3461,6 +3544,10 @@ function subscribeExecutionFeedback(executionId) {
           executionLiveState.status = status;
           executionLiveState.currentStep = step;
           executionLiveState.totalSteps = total;
+          if (data.locator && typeof data.locator === 'object') executionLiveState.locator = data.locator;
+          else if (status === 'running' && step !== previousStep) executionLiveState.locator = null;
+          if (data.timing && typeof data.timing === 'object') executionLiveState.timing = data.timing;
+          else if (status === 'running' && step !== previousStep) executionLiveState.timing = null;
           if (data.ai_check) pushExecutionLiveAdvice('check', data.ai_check, step, total);
           if (data.ai_assist) pushExecutionLiveAdvice('assist', data.ai_assist, step, total);
           if (data.ai_assist || (data.ai_check && ['warning', 'error'].includes(data.ai_check.level))) {
@@ -3532,6 +3619,8 @@ async function showExecutionDetail(id) {
         ` : '';
         let errorHtml = '';
         if (s.error_message) errorHtml = `<div class="mt-1 text-[10px] text-rose-400 font-semibold bg-rose-500/10 px-2 py-1 rounded">${s.error_message}</div>`;
+        const locatorHtml = s.metadata && s.metadata.locator ? renderExecutionLocatorSummary(s.metadata.locator, { compact: true }) : '';
+        const timingHtml = s.metadata && s.metadata.timing ? renderExecutionTimingSummary(s.metadata.timing, { compact: true }) : '';
         const duration = s.completed_at && s.started_at ? ((s.completed_at - s.started_at) * 1000).toFixed(0) + 'ms' : '-';
         return `
           <div class="glass-light rounded-lg p-3 hover:border-stone-300/50 transition-colors">
@@ -3546,7 +3635,7 @@ async function showExecutionDetail(id) {
               </div>
               <span class="${sBadgeCls}">${statusLabel(s.status)}</span>
             </div>
-            ${errorHtml}${verifyHtml}${vcHtml}${aiInsightHtml}
+            ${errorHtml}${locatorHtml ? `<div class="mt-2">${locatorHtml}</div>` : ''}${timingHtml ? `<div class="mt-2">${timingHtml}</div>` : ''}${verifyHtml}${vcHtml}${aiInsightHtml}
           </div>
         `;
       }).join('');

@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+from typing import Any
 
 from src.models.automation import LocateStrategy, StepTarget
 from src.models.desktop import ElementCriteria, Point, UIElement
@@ -127,6 +128,11 @@ class LocatedElement:
         strategy_used: LocateStrategy,
         position: Point | None = None,
         confidence: float = 0.0,
+        provider: str | None = None,
+        provider_chain: list[str] | None = None,
+        fallback_chain: list[str] | None = None,
+        attempted_providers: list[str] | None = None,
+        healed: bool = False,
     ):
         self.element = element
         self.strategy_used = strategy_used
@@ -138,10 +144,57 @@ class LocatedElement:
             )
         )
         self.confidence = confidence or STRATEGY_CONFIDENCE.get(strategy_used, 0.5)
+        self.provider = provider or self._default_provider(strategy_used)
+        self.provider_chain = list(provider_chain or [])
+        self.fallback_chain = list(fallback_chain or [])
+        attempted = attempted_providers or ([self.provider] if self.provider else [])
+        self.attempted_providers = list(dict.fromkeys(p for p in attempted if p))
+        self.healed = healed
 
     @property
     def center(self) -> Point | None:
         return self.position
+
+    @staticmethod
+    def _default_provider(strategy_used: LocateStrategy) -> str:
+        if strategy_used in {
+            LocateStrategy.ACCESSIBILITY_ID,
+            LocateStrategy.TEXT_MATCH,
+            LocateStrategy.CSS_SELECTOR,
+            LocateStrategy.XPATH,
+        }:
+            return "native_locator"
+        if strategy_used == LocateStrategy.IMAGE_MATCH:
+            return "template_match"
+        if strategy_used == LocateStrategy.IMAGE_ANCHOR:
+            return "image_anchor"
+        if strategy_used == LocateStrategy.POSITION:
+            return "coordinates"
+        return strategy_used.value
+
+    def telemetry(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "provider": self.provider,
+            "strategy": self.strategy_used.value,
+            "confidence": round(float(self.confidence or 0.0), 4),
+            "healed": self.healed,
+        }
+        if self.center is not None:
+            payload["center"] = {
+                "x": self.center.x,
+                "y": self.center.y,
+            }
+        if self.provider_chain:
+            payload["provider_chain"] = list(self.provider_chain)
+        if self.fallback_chain:
+            payload["fallback_chain"] = list(self.fallback_chain)
+        if self.attempted_providers:
+            payload["attempted_providers"] = list(self.attempted_providers)
+        if self.element.role:
+            payload["element_role"] = self.element.role
+        if self.element.title:
+            payload["element_title"] = self.element.title
+        return payload
 
 
 class ElementLocator:
@@ -157,6 +210,15 @@ class ElementLocator:
         self._strategy_confidence = StrategyConfidence()
         self._adaptive_poller = AdaptivePoller()
         self._location_history: list[dict] = []
+
+    def _grounding_runtime_status(self) -> dict[str, Any]:
+        if self._grounding_engine is None or not hasattr(self._grounding_engine, "get_runtime_status"):
+            return {}
+        try:
+            status = self._grounding_engine.get_runtime_status()
+        except Exception:
+            return {}
+        return status if isinstance(status, dict) else {}
 
     async def locate(self, target: StepTarget) -> LocatedElement | None:
         strategies = self._get_strategy_order(target)
@@ -236,11 +298,13 @@ class ElementLocator:
             vision = VisionLocator(self._adapter, self._grounding_engine)
             vision_result = await vision.locate(target)
             if vision_result:
+                vision_result.healed = True
                 logger.info("VisionLocator healed location for target")
                 return vision_result
 
             healed = await self._visual_grounding_heal(target)
             if healed:
+                healed.healed = True
                 return healed
 
         healing_chain = (
@@ -252,6 +316,7 @@ class ElementLocator:
             result = await self._try_strategy(strategy, target)
             if result:
                 result.confidence *= 0.8
+                result.healed = True
                 logger.info(f"Self-healing located element via {strategy.value} (confidence={result.confidence:.2f})")
                 self._strategy_confidence.record(strategy, True)
                 return result
@@ -281,6 +346,7 @@ class ElementLocator:
                 center_y = int(bbox[1]) if bbox and len(bbox) >= 2 else 0
 
                 if center_x > 0 and center_y > 0:
+                    runtime_status = self._grounding_runtime_status()
                     element = UIElement(
                         role="grounding_match",
                         title=f"Visual grounding: {action_desc[:50]}",
@@ -291,6 +357,11 @@ class ElementLocator:
                         strategy_used=LocateStrategy.IMAGE_MATCH,
                         position=Point(x=center_x, y=center_y),
                         confidence=result.confidence * 0.85,
+                        provider=getattr(result, "provider", None),
+                        provider_chain=getattr(result, "provider_chain", None) or runtime_status.get("provider_chain"),
+                        fallback_chain=getattr(result, "fallback_chain", None) or runtime_status.get("fallback_chain"),
+                        attempted_providers=getattr(result, "attempted_providers", None),
+                        healed=True,
                     )
                     logger.info(
                         f"Visual grounding healed location at ({center_x}, {center_y}) "

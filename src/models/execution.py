@@ -125,6 +125,8 @@ class ExecutionFeedback(BaseModel):
     step_status: StepStatus | None = None
     progress: float = 0.0
     message: str = ""
+    locator: dict[str, Any] | None = None
+    timing: dict[str, Any] | None = None
     ai_check: ExecutionAdvice | None = None
     ai_assist: dict[str, Any] | None = None
     timestamp: float = Field(default_factory=time.time)

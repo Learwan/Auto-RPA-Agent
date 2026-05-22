@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from typing import Any
 
 from src.models.automation import LocateStrategy, StepTarget
 from src.models.desktop import Point, Rect, UIElement
@@ -17,6 +18,15 @@ class VisionLocator:
 
         self._adapter: BasePlatformAdapter = adapter
         self._grounding_engine = grounding_engine
+
+    def _grounding_runtime_status(self) -> dict[str, Any]:
+        if self._grounding_engine is None or not hasattr(self._grounding_engine, "get_runtime_status"):
+            return {}
+        try:
+            status = self._grounding_engine.get_runtime_status()
+        except Exception:
+            return {}
+        return status if isinstance(status, dict) else {}
 
     async def locate(self, target: StepTarget):
         from src.executor.element_locator import LocatedElement
@@ -54,6 +64,7 @@ class VisionLocator:
             if center_x <= 0 or center_y <= 0:
                 return None
 
+            runtime_status = self._grounding_runtime_status()
             element = UIElement(
                 role="vision_match",
                 title=f"Vision: {action_desc[:50]}",
@@ -70,6 +81,11 @@ class VisionLocator:
                 strategy_used=LocateStrategy.IMAGE_MATCH,
                 position=Point(x=center_x, y=center_y),
                 confidence=result.confidence * 0.9,
+                provider=getattr(result, "provider", None),
+                provider_chain=getattr(result, "provider_chain", None) or runtime_status.get("provider_chain"),
+                fallback_chain=getattr(result, "fallback_chain", None) or runtime_status.get("fallback_chain"),
+                attempted_providers=getattr(result, "attempted_providers", None),
+                healed=True,
             )
             logger.info(
                 "VisionLocator found target at (%d, %d) confidence=%.2f",

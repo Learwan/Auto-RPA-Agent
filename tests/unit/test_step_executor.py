@@ -4,8 +4,10 @@ from types import SimpleNamespace
 import pytest
 
 import src.executor.step_executor as step_executor_module
+from src.executor.element_locator import LocatedElement
 from src.executor.step_executor import StepExecutor
 from src.models.automation import AutomationStep, LocateStrategy, StepCondition, StepTarget, StepType
+from src.models.desktop import Point, Rect, UIElement
 
 
 class DummyLocator:
@@ -34,14 +36,21 @@ class DummyAdapter:
         self._windows = windows or []
         self.activated_titles: list[str] = []
         self._active_window = active_window or (self._windows[0] if self._windows else None)
+        self.get_windows_calls = 0
+        self.capture_screen_calls = 0
 
     def get_platform_name(self):
         return "desktop"
 
     async def capture_screen(self):
+        self.capture_screen_calls += 1
         return None
 
+    async def get_screen_size(self):
+        return (1920, 1080)
+
     async def get_windows(self):
+        self.get_windows_calls += 1
         return list(self._windows)
 
     async def get_active_window(self):
@@ -76,7 +85,10 @@ def _window_target(title: str) -> StepTarget:
 @pytest.mark.asyncio
 async def test_switch_window_uses_window_lookup_instead_of_element_locator():
     locator = DummyLocator()
-    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    adapter = DummyAdapter(
+        windows=[DummyWindow("Code - Insiders"), DummyWindow("Terminal")],
+        active_window=DummyWindow("Terminal"),
+    )
     executor = StepExecutor(locator, adapter, enable_visual_verify=False)
 
     step = AutomationStep(
@@ -92,6 +104,131 @@ async def test_switch_window_uses_window_lookup_instead_of_element_locator():
     assert result.success is True
     assert locator.locate_calls == 0
     assert adapter.activated_titles == ["Code - Insiders"]
+    assert adapter.get_windows_calls == 1
+    assert result.step_log.metadata["timing"]["window_match_calls"] == 1
+    assert result.step_log.metadata["timing"]["window_match_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_switch_window_skips_lookup_when_target_already_active():
+    locator = DummyLocator()
+    active = DummyWindow("Code - Insiders")
+    adapter = DummyAdapter(windows=[active], active_window=active)
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    step = AutomationStep(
+        id="step-switch-active",
+        type=StepType.SWITCH_WINDOW,
+        action={"window_title": "Code - Insiders"},
+        target=_window_target("Code - Insiders"),
+        description="Stay on current target window",
+    )
+
+    result = await executor.execute_step(step, {}, "exec-switch-active", 0)
+
+    assert result.success is True
+    assert adapter.get_windows_calls == 0
+    assert adapter.activated_titles == []
+
+
+@pytest.mark.asyncio
+async def test_switch_window_exact_match_skips_fuzzy_scoring(monkeypatch):
+    locator = DummyLocator()
+    adapter = DummyAdapter(
+        windows=[DummyWindow("Code - Insiders"), DummyWindow("Terminal")],
+        active_window=DummyWindow("Terminal"),
+    )
+    adapter._active_window = None
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    def fail_if_called(window, target, action=None):
+        raise AssertionError("_window_match_score should not run for exact matches")
+
+    monkeypatch.setattr(executor, "_window_match_score", fail_if_called)
+
+    step = AutomationStep(
+        id="step-switch-exact-fast-path",
+        type=StepType.SWITCH_WINDOW,
+        action={"window_title": "Code - Insiders"},
+        target=_window_target("Code - Insiders"),
+        description="Use exact window title fast path",
+    )
+
+    result = await executor.execute_step(step, {}, "exec-switch-exact-fast-path", 0)
+
+    assert result.success is True
+    assert adapter.activated_titles == ["Code - Insiders"]
+
+
+@pytest.mark.asyncio
+async def test_click_step_skips_window_scan_when_target_window_already_active(monkeypatch):
+    class StableLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(
+                    role="button",
+                    title="保存",
+                    bounds=Rect(x=120, y=220, width=80, height=30),
+                ),
+                strategy_used=LocateStrategy.TEXT_MATCH,
+                position=Point(x=160, y=235),
+                confidence=0.95,
+                provider="native_locator",
+            )
+
+    locator = StableLocator()
+    active = DummyWindow("Code - Insiders")
+    adapter = DummyAdapter(windows=[active], active_window=active)
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y, clicks=1: None,
+        rightClick=lambda x, y: None,
+        doubleClick=lambda x, y: None,
+        size=lambda: (1920, 1080),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-window-context-active",
+        type=StepType.CLICK,
+        action={"button": "left"},
+        target=StepTarget(
+            strategy=LocateStrategy.TEXT_MATCH,
+            title="保存",
+            window_title="Code - Insiders",
+        ),
+        description="Click with already-active target window",
+        verification_enabled=False,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-window-context-active", 0)
+
+    assert result.success is True
+    assert adapter.get_windows_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_recover_window_context_skips_window_scan_when_target_already_active():
+    locator = DummyLocator()
+    active = DummyWindow("Code - Insiders")
+    adapter = DummyAdapter(windows=[active], active_window=active)
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    step = AutomationStep(
+        id="step-recover-window-active",
+        type=StepType.WAIT,
+        action={"duration": 0},
+        target=_window_target("Code - Insiders"),
+        description="Recovery with already-active target window",
+    )
+
+    recovered = await executor.recover_window_context(step, {})
+
+    assert recovered is True
+    assert adapter.get_windows_calls == 0
 
 
 @pytest.mark.asyncio
@@ -113,6 +250,7 @@ async def test_window_condition_uses_window_lookup_instead_of_element_wait():
 
     assert result.success is True
     assert locator.wait_calls == 0
+    assert adapter.get_windows_calls == 0
 
 
 @pytest.mark.asyncio
@@ -140,7 +278,10 @@ async def test_missing_window_does_not_trip_safety_controller_after_repeats():
 @pytest.mark.asyncio
 async def test_switch_window_matches_dynamic_title_segment():
     locator = DummyLocator()
-    adapter = DummyAdapter(windows=[DummyWindow("企业微信")], active_window=None)
+    adapter = DummyAdapter(
+        windows=[DummyWindow("企业微信"), DummyWindow("Finder")],
+        active_window=DummyWindow("Finder"),
+    )
     executor = StepExecutor(locator, adapter, enable_visual_verify=False)
 
     step = AutomationStep(
@@ -237,6 +378,245 @@ async def test_click_step_fails_when_recorded_window_is_missing(monkeypatch):
     error_msg = result.step_log.error_message or ""
     assert "拒绝执行" in error_msg or "目标窗口不可用" in error_msg
     assert click_calls == []
+
+
+@pytest.mark.asyncio
+async def test_click_step_records_locator_telemetry(monkeypatch):
+    class TelemetryLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(role="button", title="保存", bounds=None),
+                strategy_used=LocateStrategy.IMAGE_MATCH,
+                position=Point(x=120, y=240),
+                confidence=0.91,
+                provider="cloud_llm",
+                provider_chain=["qwen_local", "cloud_llm"],
+                fallback_chain=["cloud_llm"],
+                attempted_providers=["qwen_local", "cloud_llm"],
+                healed=True,
+            )
+
+    locator = TelemetryLocator()
+    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y, clicks=1: None,
+        rightClick=lambda x, y: None,
+        doubleClick=lambda x, y: None,
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-locator-telemetry",
+        type=StepType.CLICK,
+        action={"button": "left"},
+        target=StepTarget(strategy=LocateStrategy.IMAGE_MATCH, image_path="template.png"),
+        description="Click using grounded locator",
+        verification_enabled=False,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-telemetry", 0)
+
+    assert result.success is True
+    assert result.step_log.metadata["locator"]["provider"] == "cloud_llm"
+    assert result.step_log.metadata["locator"]["attempted_providers"] == ["qwen_local", "cloud_llm"]
+    assert result.step_log.metadata["locator"]["healed"] is True
+
+
+@pytest.mark.asyncio
+async def test_click_step_reuses_verified_locator_without_second_lookup(monkeypatch):
+    class StableLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(
+                    role="button",
+                    title="保存",
+                    bounds=Rect(x=100, y=220, width=80, height=30),
+                ),
+                strategy_used=LocateStrategy.TEXT_MATCH,
+                position=Point(x=140, y=235),
+                confidence=0.95,
+                provider="native_locator",
+            )
+
+    locator = StableLocator()
+    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y, clicks=1: None,
+        rightClick=lambda x, y: None,
+        doubleClick=lambda x, y: None,
+        size=lambda: (1920, 1080),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-reuse-locator",
+        type=StepType.CLICK,
+        action={"button": "left"},
+        target=StepTarget(strategy=LocateStrategy.TEXT_MATCH, title="保存"),
+        description="Reuse verified locator",
+        verification_enabled=True,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-reuse-locator", 0)
+
+    assert result.success is True
+    assert locator.locate_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_type_step_reuses_verified_locator_without_second_lookup(monkeypatch):
+    class StableLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(
+                    role="textbox",
+                    title="输入框",
+                    bounds=Rect(x=180, y=260, width=220, height=36),
+                ),
+                strategy_used=LocateStrategy.TEXT_MATCH,
+                position=Point(x=290, y=278),
+                confidence=0.94,
+                provider="native_locator",
+            )
+
+    locator = StableLocator()
+    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y: None,
+        typewrite=lambda text, interval=0.02: None,
+        press=lambda key: None,
+        hotkey=lambda *keys: None,
+        size=lambda: (1920, 1080),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-reuse-type-locator",
+        type=StepType.TYPE,
+        action={"text": "hello"},
+        target=StepTarget(strategy=LocateStrategy.TEXT_MATCH, title="输入框"),
+        description="Reuse verified locator for typing",
+        verification_enabled=True,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-reuse-type-locator", 0)
+
+    assert result.success is True
+    assert locator.locate_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_step_skips_screenshots_when_visual_verify_disabled(monkeypatch):
+    class StableLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(
+                    role="button",
+                    title="保存",
+                    bounds=Rect(x=100, y=220, width=80, height=30),
+                ),
+                strategy_used=LocateStrategy.TEXT_MATCH,
+                position=Point(x=140, y=235),
+                confidence=0.95,
+                provider="native_locator",
+            )
+
+    locator = StableLocator()
+    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    executor = StepExecutor(locator, adapter, enable_visual_verify=False)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y, clicks=1: None,
+        rightClick=lambda x, y: None,
+        doubleClick=lambda x, y: None,
+        size=lambda: (1920, 1080),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-no-screenshots",
+        type=StepType.CLICK,
+        action={"button": "left"},
+        target=StepTarget(strategy=LocateStrategy.TEXT_MATCH, title="保存"),
+        description="Skip screenshots when visual verify disabled",
+        verification_enabled=True,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-no-screenshots", 0)
+
+    assert result.success is True
+    assert adapter.capture_screen_calls == 0
+    assert result.screenshot_before is None
+    assert result.screenshot_after is None
+
+
+@pytest.mark.asyncio
+async def test_execute_step_records_timing_metadata(monkeypatch):
+    class StableLocator(DummyLocator):
+        async def locate(self, target):
+            self.locate_calls += 1
+            return LocatedElement(
+                element=UIElement(
+                    role="button",
+                    title="保存",
+                    bounds=Rect(x=100, y=220, width=80, height=30),
+                ),
+                strategy_used=LocateStrategy.TEXT_MATCH,
+                position=Point(x=140, y=235),
+                confidence=0.95,
+                provider="native_locator",
+            )
+
+    locator = StableLocator()
+    adapter = DummyAdapter(windows=[DummyWindow("Code - Insiders")])
+    executor = StepExecutor(locator, adapter, enable_visual_verify=True)
+
+    fake_pyautogui = SimpleNamespace(
+        click=lambda x, y, clicks=1: None,
+        rightClick=lambda x, y: None,
+        doubleClick=lambda x, y: None,
+        size=lambda: (1920, 1080),
+    )
+    monkeypatch.setitem(sys.modules, "pyautogui", fake_pyautogui)
+    monkeypatch.setattr(step_executor_module, "pyautogui", fake_pyautogui)
+
+    step = AutomationStep(
+        id="step-timing-metadata",
+        type=StepType.CLICK,
+        action={"button": "left"},
+        target=StepTarget(strategy=LocateStrategy.TEXT_MATCH, title="保存"),
+        description="Record timing telemetry",
+        verification_enabled=True,
+    )
+
+    result = await executor.execute_step(step, {}, "exec-timing", 0)
+
+    timing = result.step_log.metadata["timing"]
+
+    assert result.success is True
+    assert timing["locate_calls"] == 1
+    assert timing["verify_calls"] == 1
+    assert timing["screenshot_capture_calls"] == 2
+    assert timing["locate_ms"] >= 0
+    assert timing["verify_ms"] >= 0
+    assert timing["screenshot_capture_ms"] >= 0
+    assert timing["screenshot_before_ms"] >= 0
+    assert timing["screenshot_after_ms"] >= 0
+    assert timing["step_elapsed_ms"] >= 0
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,9 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.db.database import get_session_factory
+from src.db.database import Base, get_session_factory
 from src.db.repository import Repository
 from src.models.automation import (
     AutomationFlow,
@@ -115,6 +116,60 @@ class TestDatabaseSimulation:
         assert loaded.id == eid
         assert loaded.status == ExecutionStatus.COMPLETED
         assert len(loaded.step_logs) == 3
+
+    @pytest.mark.asyncio
+    async def test_repository_persists_execution_step_metadata(self, tmp_path):
+        eid = f"exec-db-meta-{uuid.uuid4().hex[:8]}"
+        db_path = tmp_path / "test_exec_metadata.db"
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        record = ExecutionRecord(
+            id=eid,
+            automation_id="flow-db-meta-001",
+            status=ExecutionStatus.COMPLETED,
+            started_at=1000.0,
+            completed_at=1002.0,
+            total_steps=1,
+            completed_steps=1,
+            failed_steps=0,
+            step_logs=[
+                ExecutionStepLog(
+                    id="log-db-meta-0",
+                    execution_id=eid,
+                    step_id="db-step-meta-0",
+                    step_type="click",
+                    step_index=0,
+                    status=StepStatus.SUCCESS,
+                    started_at=1000.0,
+                    completed_at=1000.5,
+                    metadata={
+                        "locator": {
+                            "provider": "cloud_llm",
+                            "strategy": "image_match",
+                            "attempted_providers": ["qwen_local", "cloud_llm"],
+                        }
+                    },
+                )
+            ],
+        )
+
+        async with factory() as session:
+            repo = Repository(session)
+            await repo.save_execution(record)
+
+        async with factory() as session:
+            repo = Repository(session)
+            loaded = await repo.get_execution(eid)
+
+        await engine.dispose()
+
+        assert loaded is not None
+        assert loaded.step_logs[0].metadata["locator"]["provider"] == "cloud_llm"
+        assert loaded.step_logs[0].metadata["locator"]["attempted_providers"] == ["qwen_local", "cloud_llm"]
 
     @pytest.mark.asyncio
     async def test_session_crud(self, tmp_path):

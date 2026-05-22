@@ -4,10 +4,12 @@ import base64
 import pytest
 
 from src.executor.engine import ExecutionEngine
+from src.executor.element_locator import LocatedElement
 from src.executor.error_handler import ErrorDecision
 from src.executor.intelligent_recovery import HealingAction, HealingLevel
 from src.executor.step_executor import StepResult
-from src.models.automation import AutomationFlow, AutomationStep, ErrorAction, StepTarget, StepType
+from src.models.automation import AutomationFlow, AutomationStep, ErrorAction, LocateStrategy, StepTarget, StepType
+from src.models.desktop import Point, UIElement
 from src.models.execution import ExecutionAdvice, ExecutionFragileStep, ExecutionStepLog, ExecutionSummary, StepStatus
 
 
@@ -204,6 +206,44 @@ class SuccessfulStepExecutor:
         )
 
 
+class TelemetryStepExecutor:
+    def __init__(self):
+        self.safety_controller = DummySafetyController()
+
+    async def execute_step(self, step, variables, execution_id, step_index):
+        located = LocatedElement(
+            element=UIElement(role="button", title="保存", bounds=None),
+            strategy_used=LocateStrategy.IMAGE_MATCH,
+            position=Point(x=640, y=360),
+            confidence=0.93,
+            provider="cloud_llm",
+            provider_chain=["qwen_local", "cloud_llm"],
+            fallback_chain=["cloud_llm"],
+            attempted_providers=["qwen_local", "cloud_llm"],
+            healed=True,
+        )
+        return StepResult(
+            success=True,
+            step_log=ExecutionStepLog(
+                id=f"log-{step.id}",
+                execution_id=execution_id,
+                step_id=step.id,
+                step_type=step.type.value,
+                step_index=step_index,
+                status=StepStatus.SUCCESS,
+                metadata={
+                    "timing": {
+                        "locate_ms": 12.5,
+                        "verify_ms": 3.2,
+                        "locate_calls": 1,
+                        "verify_calls": 1,
+                    }
+                },
+            ),
+            located_element=located,
+        )
+
+
 class RetryErrorHandler:
     def __init__(self):
         self.checkpoint_manager = None
@@ -342,6 +382,44 @@ async def test_execution_engine_emits_ai_feedback_and_summary():
     snapshot = engine._build_record()
     assert snapshot.ai_step_insights is not None
     assert "1" in snapshot.ai_step_insights
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_emits_locator_telemetry_in_logs_and_feedback():
+    flow = AutomationFlow(
+        id="flow-locator-telemetry",
+        name="Locator Telemetry",
+        steps=[
+            AutomationStep(
+                id="step-1",
+                type=StepType.CLICK,
+                action={"button": "left"},
+                target=StepTarget(strategy=LocateStrategy.IMAGE_MATCH, image_path="template.png"),
+                description="Click target",
+            )
+        ],
+    )
+    feedback_events = []
+    engine = ExecutionEngine(
+        flow=flow,
+        step_executor=TelemetryStepExecutor(),
+        error_handler=DummyErrorHandler(),
+        execution_id="exec-locator-telemetry",
+    )
+    engine.add_feedback_callback(lambda feedback: feedback_events.append(feedback))
+
+    record = await engine.execute()
+
+    assert record.step_logs[0].metadata["locator"]["provider"] == "cloud_llm"
+    success_feedback = next(
+        event for event in feedback_events if event.step_id == "step-1" and event.step_status == StepStatus.SUCCESS
+    )
+    assert success_feedback.locator is not None
+    assert success_feedback.locator["attempted_providers"] == ["qwen_local", "cloud_llm"]
+    assert success_feedback.locator["healed"] is True
+    assert success_feedback.timing is not None
+    assert success_feedback.timing["locate_calls"] == 1
+    assert success_feedback.timing["verify_ms"] == 3.2
 
 
 @pytest.mark.asyncio
