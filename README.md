@@ -53,7 +53,7 @@ This repository currently ships a FastAPI backend, Typer CLI, static web console
 
 ## Architecture Snapshot
 
-```
+```text
 Recorder / Desktop Capture
   |
   v
@@ -81,7 +81,7 @@ Key runtime modules:
 
 ## Project Structure
 
-```
+```text
 auto-agent-workflow/
 ├── src/
 │   ├── api/              FastAPI app, REST routes, WebSocket endpoints
@@ -161,7 +161,25 @@ auto-agent serve
 
 # or
 uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+# or
+./scripts/start.sh
 ```
+
+The quick start script prefers `uv`, falls back to `.venv`, and supports:
+
+```bash
+AUTO_AGENT_PORT=9000 ./scripts/start.sh
+AUTO_AGENT_RELOAD=0 ./scripts/start.sh
+AUTO_AGENT_PORT_CONFLICT=kill ./scripts/start.sh
+AUTO_AGENT_PORT_CONFLICT=change AUTO_AGENT_FALLBACK_PORT=8001 ./scripts/start.sh
+```
+
+When the target port is already occupied, the script can now:
+
+- interactively let you choose `kill`, `change port`, or `abort`
+- run non-interactively with `AUTO_AGENT_PORT_CONFLICT=kill|change|abort`
+- use `AUTO_AGENT_UV_CACHE_DIR` to override the uv cache path in sandboxed environments
 
 Default entry points:
 

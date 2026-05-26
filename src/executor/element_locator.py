@@ -392,7 +392,7 @@ class ElementLocator:
         strategies: list[LocateStrategy] = []
         if target.strategy == LocateStrategy.ACCESSIBILITY_ID and target.accessibility_id:
             strategies.append(LocateStrategy.ACCESSIBILITY_ID)
-        if target.strategy == LocateStrategy.TEXT_MATCH and (target.title or target.text_contains):
+        if target.strategy == LocateStrategy.TEXT_MATCH and self._has_text_match_anchor(target):
             strategies.append(LocateStrategy.TEXT_MATCH)
         if target.strategy == LocateStrategy.CSS_SELECTOR and target.selector:
             strategies.append(LocateStrategy.CSS_SELECTOR)
@@ -408,7 +408,7 @@ class ElementLocator:
         if not strategies:
             if target.accessibility_id:
                 strategies.append(LocateStrategy.ACCESSIBILITY_ID)
-            if target.title or target.text_contains:
+            if self._has_text_match_anchor(target):
                 strategies.append(LocateStrategy.TEXT_MATCH)
             if target.selector:
                 strategies.append(LocateStrategy.CSS_SELECTOR)
@@ -457,11 +457,7 @@ class ElementLocator:
     async def _locate_by_accessibility(self, target: StepTarget) -> LocatedElement | None:
         if not target.accessibility_id:
             return None
-        criteria = ElementCriteria(
-            accessibility_id=target.accessibility_id,
-            role=target.role,
-            class_name=target.class_name,
-        )
+        criteria = self._build_element_criteria(target, include_accessibility_id=True)
         element = await self._adapter.find_element(criteria)
         if element:
             confidence = self._strategy_confidence.get_confidence(LocateStrategy.ACCESSIBILITY_ID)
@@ -469,14 +465,7 @@ class ElementLocator:
         return None
 
     async def _locate_by_text(self, target: StepTarget) -> LocatedElement | None:
-        criteria = ElementCriteria(
-            title=target.title,
-            text_contains=target.text_contains,
-            role=target.role,
-            class_name=target.class_name,
-            url=target.url,
-            frame=target.frame,
-        )
+        criteria = self._build_element_criteria(target)
         element = await self._adapter.find_element(criteria)
         if element:
             confidence = self._strategy_confidence.get_confidence(LocateStrategy.TEXT_MATCH)
@@ -484,6 +473,36 @@ class ElementLocator:
                 confidence *= 1.05
             return LocatedElement(element, LocateStrategy.TEXT_MATCH, confidence=confidence)
         return None
+
+    @staticmethod
+    def _build_element_criteria(target: StepTarget, *, include_accessibility_id: bool = False) -> ElementCriteria:
+        expected_attributes = target.expected_attributes or {}
+        label = expected_attributes.get("label") or expected_attributes.get("functional_label")
+        return ElementCriteria(
+            accessibility_id=target.accessibility_id if include_accessibility_id else None,
+            role=target.role,
+            title=target.title,
+            text_contains=target.text_contains,
+            value=expected_attributes.get("value"),
+            label=label,
+            description=expected_attributes.get("description"),
+            functional_label=expected_attributes.get("functional_label"),
+            input_type=expected_attributes.get("input_type"),
+            tag_name=expected_attributes.get("tag_name"),
+            url=target.url,
+            frame=target.frame,
+            class_name=target.class_name,
+            bounds=target.bounds,
+            position=target.position,
+        )
+
+    @staticmethod
+    def _has_text_match_anchor(target: StepTarget) -> bool:
+        return bool(
+            target.title
+            or target.text_contains
+            or (target.role and (target.class_name or target.bounds or target.expected_attributes or target.position))
+        )
 
     async def _locate_by_css_selector(self, target: StepTarget) -> LocatedElement | None:
         if not target.selector:

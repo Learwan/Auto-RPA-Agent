@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import logging
 import platform
 import sys
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.config import settings
+from src.config import resolve_local_vision_model, settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,22 @@ _thread_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm-engine"
 _VLM_MAX_TOKENS = 512
 _TRANSFORMERS_MINICPM_DOWNSAMPLE_MODE = "16x"
 _TRANSFORMERS_MINICPM_MAX_SLICE_NUMS = 9
+_MINICPM_TEXT_FALLBACK_SYSTEM_PROMPT = (
+    "严格遵守用户要求。不要解释，不要复述，不要添加前后缀。"
+    "若用户要求只回复某个词，就只输出那个词。"
+)
+_MINICPM_TEXT_ONLY_FILTER_PREFIXES = (
+    "vision_tower.",
+    "vit_merger.",
+    "merger.",
+    "resampler.",
+)
+_MINICPM_TEXT_ONLY_FILTER_FRAGMENTS = (
+    ".vision_tower.",
+    ".vit_merger.",
+    ".merger.",
+    ".resampler.",
+)
 
 
 def _ensure_mlx_vlm_minicpm_compat() -> None:
@@ -137,6 +154,10 @@ class InferenceResult:
     elapsed_ms: float
     tokens_per_second: float
     finish_reason: str = "stop"
+
+
+class LocalVisionRuntimeUnavailableError(RuntimeError):
+    pass
 
 
 class VLLMDriver:
@@ -347,6 +368,7 @@ class MLXDriver:
         self._tokenizer = None
         self._loaded = False
         self._server_mode = False
+        self._uses_minicpm_text_fallback = False
         self._gpu_name = "Apple Silicon (MLX)"
 
     @property
@@ -357,6 +379,130 @@ class MLXDriver:
     def gpu_name(self) -> str:
         return self._gpu_name
 
+    @staticmethod
+    def _is_minicpm_text_only_filtered_weight(key: str) -> bool:
+        if key.startswith(_MINICPM_TEXT_ONLY_FILTER_PREFIXES):
+            return True
+        return any(fragment in key for fragment in _MINICPM_TEXT_ONLY_FILTER_FRAGMENTS)
+
+    def _is_minicpm_text_checkpoint(self) -> bool:
+        config_path = Path(self._model_path) / "config.json"
+        if not config_path.exists():
+            return False
+
+        try:
+            config = json.loads(config_path.read_text())
+        except Exception:
+            return False
+
+        text_config = config.get("text_config") or {}
+        model_type = str(config.get("model_type") or "")
+        text_model_type = str(text_config.get("model_type") or "")
+        return model_type in {"minicpmv4_6", "minicpmv"} or text_model_type == "qwen3_5_text"
+
+    def _load_minicpm_text_fallback(self) -> tuple[Any, Any]:
+        from mlx_lm import utils as mlx_utils
+        from mlx_lm.models import qwen3_5
+
+        model_path = Path(self._model_path)
+        config = mlx_utils.load_config(model_path)
+        config["model_type"] = "qwen3_5"
+
+        text_config = dict(config.get("text_config") or {})
+        text_config["model_type"] = "qwen3_5"
+        config["text_config"] = text_config
+
+        class MiniCPMTextOnlyModel(qwen3_5.Model):
+            def sanitize(self, weights):
+                sanitized = super().sanitize(weights)
+                return {
+                    key: value
+                    for key, value in sanitized.items()
+                    if not MLXDriver._is_minicpm_text_only_filtered_weight(key)
+                }
+
+        model, resolved_config = mlx_utils.load_model(
+            model_path,
+            model_config=config,
+            get_model_classes=lambda config: (MiniCPMTextOnlyModel, qwen3_5.ModelArgs),
+        )
+        tokenizer = mlx_utils.load_tokenizer(
+            model_path,
+            {"trust_remote_code": True},
+            eos_token_ids=resolved_config.get("eos_token_id"),
+        )
+        return model, tokenizer
+
+    @staticmethod
+    def _message_content_to_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(str(item.get("text") or ""))
+            return "\n".join(part for part in parts if part)
+        if content is None:
+            return ""
+        return str(content)
+
+    def _build_minicpm_text_prompt(self, messages: list[dict[str, str]]) -> str:
+        prompt_parts: list[str] = []
+        system_parts = [_MINICPM_TEXT_FALLBACK_SYSTEM_PROMPT]
+        start_index = 0
+
+        if messages and messages[0].get("role") == "system":
+            system_text = self._message_content_to_text(messages[0].get("content", "")).strip()
+            if system_text:
+                system_parts.append(system_text)
+            start_index = 1
+
+        prompt_parts.append(f"<|im_start|>system\n{'\n\n'.join(system_parts)}<|im_end|>")
+
+        for message in messages[start_index:]:
+            role = message.get("role", "user")
+            if role not in {"user", "assistant", "system"}:
+                role = "user"
+            content = self._message_content_to_text(message.get("content", ""))
+            prompt_parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
+
+        prompt_parts.append("<|im_start|>assistant\n")
+        return "\n".join(prompt_parts)
+
+    @staticmethod
+    def _strip_minicpm_think_output(text: str) -> tuple[str, bool, bool]:
+        stripped = text.lstrip()
+        if not stripped.startswith("<think>"):
+            return text, False, False
+
+        end_marker = "</think>"
+        end_index = stripped.find(end_marker)
+        if end_index == -1:
+            return stripped, True, False
+
+        answer = stripped[end_index + len(end_marker) :].lstrip()
+        return (answer or stripped), True, True
+
+    def _minicpm_retry_max_tokens(self, max_tok: int) -> int:
+        configured_limit = max(self._max_tokens, 192)
+        return max(max_tok, min(max(max_tok * 8, 192), configured_limit))
+
+    def _generate_programmatic_once(self, prompt: str, max_tok: int) -> tuple[str, int, float]:
+        from mlx_lm import stream_generate
+
+        start = time.perf_counter()
+        text_parts: list[str] = []
+        token_count = 0
+        for resp in stream_generate(self._model, self._tokenizer, prompt, max_tokens=max_tok):
+            text_parts.append(resp.text)
+            token_count += 1
+            if token_count >= max_tok:
+                break
+
+        elapsed = (time.perf_counter() - start) * 1000
+        return "".join(text_parts).lstrip(), token_count, elapsed
+
     def _init_programmatic(self) -> bool:
         try:
             from mlx_lm import load
@@ -365,10 +511,27 @@ class MLXDriver:
                 self._model_path,
                 tokenizer_config={"trust_remote_code": True},
             )
+            self._uses_minicpm_text_fallback = False
             self._loaded = True
             logger.info(f"MLX driver loaded model '{self._model_path}' on Apple Silicon")
             return True
         except Exception as e:
+            if self._is_minicpm_text_checkpoint():
+                try:
+                    self._model, self._tokenizer = self._load_minicpm_text_fallback()
+                    self._uses_minicpm_text_fallback = True
+                    self._loaded = True
+                    logger.info(
+                        "MLX driver loaded MiniCPM text checkpoint '%s' via qwen3_5 fallback",
+                        self._model_path,
+                    )
+                    return True
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "MLX MiniCPM text fallback failed for '%s': %s",
+                        self._model_path,
+                        fallback_exc,
+                    )
             logger.warning(f"MLX programmatic init failed: {e}, falling back to server mode")
             return False
 
@@ -410,21 +573,21 @@ class MLXDriver:
         return self._stream_programmatic(messages, max_tok)
 
     def _generate_programmatic(self, messages, max_tok) -> InferenceResult:
-        from mlx_lm import stream_generate
-
         prompt = self._build_chat_prompt(messages)
+        full_text, token_count, elapsed = self._generate_programmatic_once(prompt, max_tok)
 
-        start = time.perf_counter()
-        text_parts: list[str] = []
-        token_count = 0
-        for resp in stream_generate(self._model, self._tokenizer, prompt, max_tokens=max_tok):
-            text_parts.append(resp.text)
-            token_count += 1
-            if token_count >= max_tok:
-                break
-
-        elapsed = (time.perf_counter() - start) * 1000
-        full_text = "".join(text_parts).lstrip()
+        if self._uses_minicpm_text_fallback:
+            cleaned_text, had_think, think_closed = self._strip_minicpm_think_output(full_text)
+            if had_think and not think_closed:
+                retry_max_tok = self._minicpm_retry_max_tokens(max_tok)
+                if retry_max_tok > max_tok:
+                    retried_text, retried_tokens, retried_elapsed = self._generate_programmatic_once(prompt, retry_max_tok)
+                    full_text = retried_text
+                    token_count = retried_tokens
+                    elapsed += retried_elapsed
+                    cleaned_text, had_think, think_closed = self._strip_minicpm_think_output(full_text)
+            if had_think and think_closed:
+                full_text = cleaned_text
 
         return InferenceResult(
             text=full_text,
@@ -486,6 +649,9 @@ class MLXDriver:
                 yield chunk.choices[0].delta.content
 
     def _build_chat_prompt(self, messages: list[dict[str, str]]) -> str:
+        if self._uses_minicpm_text_fallback:
+            return self._build_minicpm_text_prompt(messages)
+
         if hasattr(self._tokenizer, "apply_chat_template") and self._tokenizer is not None:
             try:
                 return self._tokenizer.apply_chat_template(
@@ -546,6 +712,8 @@ class LocalLLMEngine:
                 "vision_loaded": False,
                 "vision_backend": None,
                 "vision_device": None,
+                "text_model_path": settings.LOCAL_LLM_MODEL,
+                "vision_model_path": resolve_local_vision_model(settings),
                 "model_path": settings.LOCAL_LLM_MODEL,
             }
 
@@ -556,12 +724,15 @@ class LocalLLMEngine:
             "vision_loaded": instance._vlm_loaded,
             "vision_backend": instance._vlm_backend or None,
             "vision_device": instance._vlm_device or None,
+            "text_model_path": instance._model_path,
+            "vision_model_path": instance._vision_model_path,
             "model_path": instance._model_path,
         }
 
     def __init__(self):
         self._engine_type = settings.LOCAL_LLM_ENGINE
         self._model_path = settings.LOCAL_LLM_MODEL
+        self._vision_model_path = resolve_local_vision_model(settings)
         self._base_url = settings.LOCAL_LLM_BASE_URL
         self._temperature = settings.LOCAL_LLM_TEMPERATURE
         self._max_tokens = settings.LOCAL_LLM_MAX_TOKENS
@@ -577,6 +748,7 @@ class LocalLLMEngine:
         self._vlm_loaded = False
         self._vlm_backend = ""
         self._vlm_device = ""
+        self._vlm_load_error: LocalVisionRuntimeUnavailableError | None = None
 
     async def initialize(self) -> None:
         loop = asyncio.get_running_loop()
@@ -586,7 +758,11 @@ class LocalLLMEngine:
             self._resolve_auto_engine()
 
         logger.info(
-            f"LocalLLMEngine initializing: engine={self._engine_type}, model={self._model_path}, caps={self._caps}"
+            "LocalLLMEngine initializing: engine=%s, text_model=%s, vision_model=%s, caps=%s",
+            self._engine_type,
+            self._model_path,
+            self._vision_model_path,
+            self._caps,
         )
 
         await self._try_load_model()
@@ -749,17 +925,31 @@ class LocalLLMEngine:
         messages.append({"role": "user", "content": user_content})
         return await self.generate(messages)
 
-    async def reload_model(self, engine: str | None = None, model: str | None = None) -> EngineStatus:
+    async def reload_model(
+        self,
+        engine: str | None = None,
+        model: str | None = None,
+        vision_model: str | None = None,
+    ) -> EngineStatus:
+        old_model_path = self._model_path
+        old_vision_model_path = self._vision_model_path
         if engine:
             self._engine_type = engine
         if model:
             self._model_path = model
+        if vision_model is not None:
+            self._vision_model_path = vision_model
+        elif model and old_vision_model_path == old_model_path:
+            self._vision_model_path = model
 
         if self._driver is not None:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(_thread_pool, self._driver.unload)
             self._driver = None
             self._model_loaded = False
+
+        if self._vision_model_path != old_vision_model_path:
+            self._reset_vlm_runtime()
 
         await self._try_load_model()
         return await self.get_status()
@@ -770,40 +960,69 @@ class LocalLLMEngine:
             await loop.run_in_executor(_thread_pool, self._driver.unload)
             self._driver = None
             self._model_loaded = False
-        if self._vlm_model is not None:
-            self._vlm_model = None
-            self._vlm_processor = None
-            self._vlm_loaded = False
-            self._vlm_backend = ""
-            if self._vlm_device:
-                with contextlib.suppress(Exception):
-                    import torch
+        self._reset_vlm_runtime()
 
-                    if self._vlm_device == "mps" and hasattr(torch, "mps"):
-                        torch.mps.empty_cache()
-            self._vlm_device = ""
+    def _reset_vlm_runtime(self) -> None:
+        self._vlm_model = None
+        self._vlm_processor = None
+        self._vlm_loaded = False
+        self._vlm_backend = ""
+        self._vlm_load_error = None
+        if self._vlm_device:
+            with contextlib.suppress(Exception):
+                import torch
+
+                if self._vlm_device == "mps" and hasattr(torch, "mps"):
+                    torch.mps.empty_cache()
+        self._vlm_device = ""
 
     def _should_use_transformers_vlm_fallback(self, exc: Exception) -> bool:
-        model_name = self._model_path.lower()
+        model_name = self._vision_model_path.lower()
         if "openbmb" not in model_name or "minicpm-v-4.6" not in model_name:
             return False
 
         return True
 
     def _load_transformers_vlm_sync(self):
+        try:
+            import packaging  # noqa: F401
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "Transformers MiniCPM fallback requires the 'packaging' package. "
+                "Please install the project dependencies again so the local vision runtime can start."
+            ) from exc
+
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-        processor = AutoProcessor.from_pretrained(self._model_path, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(self._vision_model_path, trust_remote_code=True)
         model = AutoModelForImageTextToText.from_pretrained(
-            self._model_path,
+            self._vision_model_path,
             trust_remote_code=True,
             torch_dtype="auto",
         )
         model = model.to(device)
         model.eval()
         return model, processor, device
+
+    def _summarize_vlm_load_error(self, exc: Exception, *, stage: str = "transformers") -> str:
+        message = " ".join(str(exc).split())
+        if "Missing " in message and "parameters:" in message:
+            if stage == "mlx":
+                return (
+                    f"Local vision checkpoint '{self._vision_model_path}' could not be opened by mlx_vlm. "
+                    "Trying the transformers fallback instead."
+                )
+            return (
+                f"Local vision runtime could not load '{self._vision_model_path}'. "
+                "The configured MiniCPM checkpoint appears incompatible or incomplete for the transformers fallback."
+            )
+        if "requires the 'packaging' package" in message:
+            return message
+        if len(message) > 240:
+            message = f"{message[:237]}..."
+        return f"Local vision runtime could not start for '{self._vision_model_path}': {message}"
 
     def _generate_with_transformers_vlm_sync(
         self,
@@ -891,38 +1110,46 @@ class LocalLLMEngine:
     async def _load_vlm(self) -> None:
         if self._vlm_loaded:
             return
+        if self._vlm_load_error is not None:
+            raise self._vlm_load_error
         loop = asyncio.get_running_loop()
 
         def _load():
             import mlx_vlm
 
             _ensure_mlx_vlm_minicpm_compat()
-            return mlx_vlm.load(self._model_path)
+            return mlx_vlm.load(self._vision_model_path)
 
         try:
             self._vlm_model, self._vlm_processor = await loop.run_in_executor(_thread_pool, _load)
             self._vlm_backend = "mlx"
             self._vlm_device = ""
             self._vlm_loaded = True
-            logger.info(f"VLM model loaded via mlx_vlm: '{self._model_path}'")
+            logger.info("VLM model loaded via mlx_vlm: '%s'", self._vision_model_path)
         except Exception as exc:
             if not self._should_use_transformers_vlm_fallback(exc):
                 raise
 
             logger.warning(
                 "mlx_vlm load failed for '%s', falling back to transformers MiniCPM runtime: %s",
-                self._model_path,
-                exc,
+                self._vision_model_path,
+                self._summarize_vlm_load_error(exc, stage="mlx"),
             )
-            self._vlm_model, self._vlm_processor, self._vlm_device = await loop.run_in_executor(
-                _thread_pool,
-                self._load_transformers_vlm_sync,
-            )
+            try:
+                self._vlm_model, self._vlm_processor, self._vlm_device = await loop.run_in_executor(
+                    _thread_pool,
+                    self._load_transformers_vlm_sync,
+                )
+            except Exception as fallback_exc:
+                self._vlm_load_error = LocalVisionRuntimeUnavailableError(
+                    self._summarize_vlm_load_error(fallback_exc)
+                )
+                raise self._vlm_load_error from fallback_exc
             self._vlm_backend = "transformers"
             self._vlm_loaded = True
             logger.info(
                 "VLM model loaded via transformers: '%s' on %s",
-                self._model_path,
+                self._vision_model_path,
                 self._vlm_device,
             )
 

@@ -255,7 +255,7 @@ class GUIGroundingEngine:
                 },
                 "qwen": {
                     "selected": preferred_backend == "qwen",
-                    "model_path": runtime.get("model_path"),
+                    "model_path": runtime.get("vision_model_path") or runtime.get("model_path"),
                     "runtime_loaded": runtime_loaded,
                     "runtime_backend": runtime_backend,
                     "runtime_device": runtime.get("vision_device"),

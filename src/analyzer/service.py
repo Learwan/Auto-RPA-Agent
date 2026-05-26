@@ -9,10 +9,11 @@ from src.analyzer.checkpoint_support import backfill_flow_checkpoints
 from src.analyzer.closure_assessor import FlowClosureAssessor
 from src.analyzer.confidence_scorer import ConfidenceScorer, ScoredFlow
 from src.analyzer.intent_recognizer import BusinessSemanticExtractor
+from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.knowledge_graph import (
     OperationPattern,
+    WorkflowKnowledgeGraph,
 )
-from src.analyzer.operation_repair import OperationRepairService
 from src.analyzer.pattern_detector import PatternDetector
 from src.analyzer.preprocessor import OperationPreprocessor
 from src.analyzer.script_generator import ScriptGenerator
@@ -191,30 +192,83 @@ class AnalysisService:
 
         special_ops = [operation for operation in operations if operation.op_type in DIRECT_KEY_OP_TYPES]
         click_ops = [operation for operation in operations if operation.op_type in DIRECT_CLICK_OP_TYPES]
-        selected = []
+        selected_markers: set[int] = set()
 
         first_op = operations[0]
         if first_op.op_type in {"switch_window", "navigation"}:
-            selected.append(first_op)
+            selected_markers.add(id(first_op))
 
-        selected.extend(special_ops)
+        for operation in special_ops:
+            selected_markers.add(id(operation))
 
         if click_ops:
-            if not special_ops and len(click_ops) > 1:
-                selected.append(click_ops[0])
-            selected.append(click_ops[-1])
+            for operation in self._select_semantic_click_ops(click_ops, has_special_ops=bool(special_ops)):
+                selected_markers.add(id(operation))
         elif not special_ops:
-            selected.append(operations[-1])
+            selected_markers.add(id(operations[-1]))
 
         deduplicated = []
-        seen_ids: set[int] = set()
-        for operation in selected:
+        for operation in operations:
             marker = id(operation)
-            if marker in seen_ids:
+            if marker not in selected_markers:
                 continue
-            seen_ids.add(marker)
             deduplicated.append(operation)
         return deduplicated
+
+    def _select_semantic_click_ops(self, click_ops: list, *, has_special_ops: bool) -> list:
+        if not click_ops:
+            return []
+
+        selected: list = []
+        last_signature: tuple | None = None
+
+        for operation in click_ops:
+            signature = self._operation_target_signature(operation)
+            if not selected:
+                selected.append(operation)
+                last_signature = signature
+                continue
+
+            if signature != last_signature:
+                selected.append(operation)
+                last_signature = signature
+
+        if has_special_ops:
+            if len(selected) == 1 and len(click_ops) > 1:
+                return [click_ops[-1]]
+            return selected
+
+        if len(selected) == 1 and len(click_ops) > 1:
+            return [click_ops[0], click_ops[-1]]
+
+        if selected[-1] is not click_ops[-1]:
+            selected.append(click_ops[-1])
+
+        return selected
+
+    @staticmethod
+    def _operation_target_signature(operation) -> tuple:
+        context = getattr(operation, "context", None) or {}
+        focused_element = context.get("focused_element") or {}
+        active_window = context.get("active_window") or {}
+        data = getattr(operation, "data", None) or {}
+
+        return (
+            getattr(operation, "op_type", None),
+            active_window.get("app_name") or "",
+            active_window.get("title") or "",
+            active_window.get("url") or "",
+            focused_element.get("identifier") or "",
+            focused_element.get("selector") or "",
+            focused_element.get("xpath") or "",
+            focused_element.get("title") or "",
+            focused_element.get("functional_label") or "",
+            focused_element.get("description") or "",
+            focused_element.get("role") or "",
+            focused_element.get("class_name") or "",
+            data.get("x") if isinstance(data, dict) else None,
+            data.get("y") if isinstance(data, dict) else None,
+        )
 
     async def get_flow_detail(self, flow_id: str) -> ScoredFlow | None:
         flow = await self._with_repo(lambda r: r.get_automation_flow(flow_id))
@@ -354,8 +408,6 @@ class AnalysisService:
             self._apply_ai_artifacts(flow, scored, analysis_result)
             logger.info(f"AI analyzed flow {flow.id}: {len(json.dumps(analysis_result, ensure_ascii=False))} chars")
 
-        await self._try_suggest_flow_name(flow, flow_desc)
-
         self._set_ai_enhancement_status(flow, status_payload)
 
         kg_result = await kg_task
@@ -364,26 +416,6 @@ class AnalysisService:
             logger.debug(f"Knowledge graph updated for flow {flow.id}")
 
         return scored
-
-    async def _try_suggest_flow_name(self, flow: AutomationFlow, flow_desc: str) -> None:
-        if not self._llm or not getattr(self._llm, "is_configured", False):
-            return
-        if not hasattr(self._llm, "suggest_flow_name"):
-            return
-        name_source = flow.description or ", ".join(
-            s.description for s in flow.steps[:5] if s.description
-        ) or flow_desc
-        try:
-            suggested = await asyncio.wait_for(
-                self._llm.suggest_flow_name(name_source),
-                timeout=30.0,
-            )
-            suggested = str(suggested or "").strip()
-            if suggested:
-                flow.name = suggested[:100]
-                logger.info(f"LLM suggested name for flow {flow.id}: {flow.name}")
-        except Exception as e:
-            logger.debug(f"Flow name suggestion skipped: {e}")
 
     async def _safe_ai_artifacts(self, flow_desc: str, op_summary: str, flow: AutomationFlow) -> dict | None:
         if not self._llm or not getattr(self._llm, 'is_configured', False):

@@ -82,6 +82,10 @@ class ElementCriteria(BaseModel):
     identifier: str | None = None
     value: str | None = None
     label: str | None = None
+    description: str | None = None
+    functional_label: str | None = None
+    input_type: str | None = None
+    tag_name: str | None = None
     selector: str | None = None
     xpath: str | None = None
     url: str | None = None

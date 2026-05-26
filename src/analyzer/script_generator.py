@@ -47,6 +47,20 @@ STRATEGY_WEIGHTS = {
     LocateStrategy.POSITION: 0.40,
 }
 
+SENSITIVE_INPUT_HINTS = (
+    "password",
+    "passwd",
+    "pwd",
+    "secret",
+    "token",
+    "otp",
+    "pin",
+    "验证码",
+    "密码",
+    "口令",
+    "安全码",
+)
+
 
 class ScriptGenerator:
     def __init__(self):
@@ -128,12 +142,60 @@ class ScriptGenerator:
                     steps.append(wait_step)
             step = self._op_to_step(op, i)
             if step:
+                next_op = operations[i + 1] if i + 1 < len(operations) else None
+                step = self._apply_adjacent_scroll_anchor(step, op, next_op)
                 condition_step = self._build_condition_wait_step(step, steps)
                 if condition_step is not None:
                     steps.append(condition_step)
                 steps.append(step)
             previous_op = op
         return steps
+
+    def _apply_adjacent_scroll_anchor(
+        self,
+        step: AutomationStep,
+        op: NormalizedOperation,
+        next_op: NormalizedOperation | None,
+    ) -> AutomationStep:
+        if step.type != StepType.CLICK or step.target.strategy != LocateStrategy.POSITION:
+            return step
+        if next_op is None or next_op.op_type != "mouse_scroll":
+            return step
+
+        current_window = (op.context or {}).get("active_window") or {}
+        next_window = (next_op.context or {}).get("active_window") or {}
+        if self._window_context_signature(current_window) != self._window_context_signature(next_window):
+            return step
+
+        next_context = next_op.context or {}
+        scroll_anchor = self._contextual_anchor_element(next_context, StepType.SCROLL)
+        if not scroll_anchor:
+            return step
+
+        anchored_context = dict(op.context or {})
+        anchored_context["scroll_anchor"] = scroll_anchor
+        anchored_context["scroll_anchor_inferred"] = True
+        anchored_op = NormalizedOperation(
+            op_type=op.op_type,
+            data=dict(op.data),
+            timestamp=op.timestamp,
+            seq_num=op.seq_num,
+            context=anchored_context,
+        )
+        anchored_target = self._build_target(anchored_op, step.type)
+        if anchored_target.strategy == LocateStrategy.POSITION:
+            return step
+
+        step.target = anchored_target
+        metadata = dict(step.metadata or {})
+        metadata["adjacent_anchor_source"] = (
+            self._contextual_anchor_source(next_context, StepType.SCROLL)
+            or "adjacent_scroll_anchor"
+        )
+        step.metadata = metadata
+        step.metadata["locator_requires_confirmation"] = step.locator_requires_confirmation()
+        step.metadata["locator_stability"] = step.target.inferred_locator_stability()
+        return step
 
     def _build_inferred_wait_step(
         self,
@@ -146,17 +208,86 @@ class ScriptGenerator:
 
         wait_ms = min(gap_ms, MAX_INFERRED_WAIT_MS)
         wait_seconds = round(wait_ms / 1000.0, 2)
+        target, target_source = self._build_wait_target(previous_op, current_op)
         return AutomationStep(
             id=str(uuid.uuid4()),
             type=StepType.WAIT,
             action={"duration": wait_seconds},
-            target=StepTarget(),
+            target=target,
             execution_order=None,
             delay=0,
             on_error=ErrorAction.SKIP,
             retry_count=0,
             description=f"Inferred wait for UI response ({gap_ms}ms)",
-            metadata={"source": "inferred_wait", "gap_ms": gap_ms},
+            metadata={
+                "source": "inferred_wait",
+                "gap_ms": gap_ms,
+                "wait_target_source": target_source,
+                "locator_strategy": target.strategy.value,
+                "locator_stability": target.inferred_locator_stability(),
+            },
+        )
+
+    def _build_wait_target(
+        self,
+        previous_op: NormalizedOperation,
+        current_op: NormalizedOperation,
+    ) -> tuple[StepTarget, str]:
+        current_target = self._semantic_wait_target_from_operation(current_op)
+        if current_target is not None:
+            return current_target, "next_operation"
+
+        previous_target = self._semantic_wait_target_from_operation(previous_op)
+        if previous_target is not None:
+            return previous_target, "previous_operation"
+
+        return StepTarget(), "none"
+
+    def _semantic_wait_target_from_operation(
+        self,
+        op: NormalizedOperation,
+    ) -> StepTarget | None:
+        step_type = self._map_op_type(op.op_type)
+        if step_type is None:
+            return None
+        target = self._build_target(op, step_type)
+        if self._target_has_wait_semantics(target):
+            return target.model_copy()
+
+        active_window = (op.context or {}).get("active_window") or {}
+        return self._build_window_context_target(active_window)
+
+    @staticmethod
+    def _target_has_wait_semantics(target: StepTarget) -> bool:
+        if target.strategy != LocateStrategy.POSITION:
+            return True
+        return bool(
+            target.selector
+            or target.xpath
+            or target.accessibility_id
+            or target.title
+            or target.text_contains
+            or target.window_title
+            or target.role
+        )
+
+    @staticmethod
+    def _build_window_context_target(active_window: dict | None) -> StepTarget | None:
+        active_window = active_window or {}
+        title = active_window.get("title") or active_window.get("app_name")
+        app_name = active_window.get("app_name")
+        url = active_window.get("url")
+        if not title and not url:
+            return None
+
+        expected_attributes = {"app_name": app_name} if app_name else None
+        return StepTarget(
+            strategy=LocateStrategy.TEXT_MATCH,
+            title=title,
+            text_contains=title,
+            window_title=title,
+            url=url,
+            expected_attributes=expected_attributes,
         )
 
     def _build_condition_wait_step(
@@ -359,6 +490,7 @@ class ScriptGenerator:
                 "locator_stability": target.inferred_locator_stability(),
                 "locator_strategy": target.strategy.value,
                 "locator_confirmation_reason": self._build_locator_confirmation_reason(target),
+                "contains_sensitive_input": self._is_sensitive_input_operation(op),
             },
         )
 
@@ -404,7 +536,16 @@ class ScriptGenerator:
         elif step_type == StepType.HOTKEY:
             action = {"key": op.data.get("key", ""), "modifiers": op.data.get("modifiers", [])}
         elif step_type == StepType.SCROLL:
-            action = {"delta": op.data.get("scroll_delta", 0)}
+            delta = op.data.get("scroll_dy")
+            if delta in (None, 0):
+                delta = op.data.get("scroll_dx")
+            if delta in (None, 0):
+                delta = op.data.get("scroll_delta", 0)
+            action = {
+                "delta": delta,
+                "x": op.data.get("x"),
+                "y": op.data.get("y"),
+            }
         elif step_type == StepType.DRAG:
             drag_start = op.data.get("drag_start")
             if drag_start:
@@ -478,6 +619,8 @@ class ScriptGenerator:
         focused_element = context.get("focused_element")
         active_window = context.get("active_window") or {}
         node_suggestion = context.get("node_suggestion") or {}
+        inferred_anchor_source = self._contextual_anchor_source(context, step_type)
+        anchor_element = focused_element or self._contextual_anchor_element(context, step_type)
         is_web_context = bool(
             context.get("platform") == "web"
             or active_window.get("browser_type")
@@ -506,18 +649,24 @@ class ScriptGenerator:
                 screenshot_path=context.get("screenshot_path"),
             )
 
-            if focused_element:
-                selector = focused_element.get("selector")
-                xpath = focused_element.get("xpath")
-                identifier = focused_element.get("identifier")
-                role = focused_element.get("role")
-                title = focused_element.get("title")
-                text_hint = self._focused_text_hint(focused_element)
-                class_name = focused_element.get("class_name")
-                bounds = focused_element.get("bounds")
-                url = focused_element.get("url") or active_window.get("url")
-                frame = focused_element.get("frame")
-                expected_attributes = self._build_expected_attributes(focused_element)
+            if anchor_element:
+                selector = anchor_element.get("selector")
+                xpath = anchor_element.get("xpath")
+                identifier = anchor_element.get("identifier")
+                role = anchor_element.get("role")
+                title = anchor_element.get("title")
+                text_hint = self._focused_text_hint(anchor_element)
+                class_name = anchor_element.get("class_name")
+                bounds = anchor_element.get("bounds")
+                url = anchor_element.get("url") or active_window.get("url")
+                frame = anchor_element.get("frame")
+                expected_attributes = self._build_expected_attributes(anchor_element)
+                if inferred_anchor_source:
+                    expected_attributes = {
+                        **(expected_attributes or {}),
+                        "anchor_inferred": True,
+                        "anchor_source": inferred_anchor_source,
+                    }
                 window_title = active_window.get("title") or active_window.get("app_name")
 
                 if is_web_context and selector:
@@ -581,7 +730,7 @@ class ScriptGenerator:
                     )
                 elif role and not is_web_context:
                     target = StepTarget(
-                        strategy=LocateStrategy.POSITION,
+                        strategy=LocateStrategy.TEXT_MATCH,
                         position=position,
                         role=role,
                         title=title or text_hint,
@@ -610,7 +759,7 @@ class ScriptGenerator:
                         window_title=window_title,
                         url=active_window.get("url") if is_web_context else None,
                         frame=frame if is_web_context else None,
-                        expected_attributes=expected_attributes if focused_element else None,
+                        expected_attributes=expected_attributes if anchor_element else None,
                     )
             elif x and y:
                 target = StepTarget(
@@ -644,7 +793,48 @@ class ScriptGenerator:
                     window_title=title,
                     url=url,
                 )
+        elif step_type == StepType.HOTKEY:
+            title = active_window.get("title") or active_window.get("app_name")
+            app_name = active_window.get("app_name")
+            expected_attributes = {"app_name": app_name} if app_name else None
+            if title or expected_attributes:
+                target = StepTarget(
+                    strategy=LocateStrategy.TEXT_MATCH,
+                    title=title,
+                    text_contains=title,
+                    window_title=title,
+                    expected_attributes=expected_attributes,
+                )
         return target
+
+    @staticmethod
+    def _contextual_anchor_element(context: dict, step_type: StepType) -> dict | None:
+        if step_type == StepType.SCROLL:
+            anchor = context.get("scroll_anchor") or context.get("neighbor_anchor")
+            return anchor if isinstance(anchor, dict) else None
+        if step_type == StepType.CLICK:
+            anchor = context.get("neighbor_anchor") or context.get("scroll_anchor")
+            return anchor if isinstance(anchor, dict) else None
+        return None
+
+    @staticmethod
+    def _contextual_anchor_source(context: dict, step_type: StepType) -> str | None:
+        if step_type == StepType.CLICK and context.get("scroll_anchor_inferred"):
+            return "scroll_anchor"
+        if step_type == StepType.SCROLL and context.get("scroll_anchor_inferred"):
+            return "scroll_anchor"
+        if step_type in {StepType.CLICK, StepType.SCROLL} and context.get("neighbor_anchor_inferred"):
+            return "neighbor_anchor"
+        return None
+
+    @staticmethod
+    def _window_context_signature(window: dict | None) -> tuple:
+        window = window or {}
+        return (
+            window.get("title") or "",
+            window.get("app_name") or "",
+            window.get("url") or "",
+        )
 
     @staticmethod
     def _focused_text_hint(focused_element: dict) -> str | None:
@@ -800,8 +990,28 @@ class ScriptGenerator:
         self, steps: list[AutomationStep], operations: list[NormalizedOperation]
     ) -> list[FlowVariable]:
         variables = []
+        ops_by_seq_num = {op.seq_num: op for op in operations}
         for step in steps:
             if step.type == StepType.TYPE and step.action.get("text"):
+                source_seq_num = (step.metadata or {}).get("source_seq_num")
+                source_op = ops_by_seq_num.get(source_seq_num)
+                if self._is_sensitive_input_operation(source_op):
+                    var_name = f"credential_{len(variables) + 1}"
+                    variables.append(
+                        FlowVariable(
+                            name=var_name,
+                            var_type="credential",
+                            default_value=None,
+                            description=f"Credential input for step {step.id}",
+                        )
+                    )
+                    step.action["text"] = f"${{{var_name}}}"
+                    step.metadata["credential_binding_required"] = True
+                    step.metadata["credential_binding_state"] = "unbound"
+                    step.metadata["credential_variable"] = var_name
+                    step.metadata["credential_trust"] = "runtime_variable"
+                    continue
+
                 text = step.action["text"]
                 if len(text) > 3:
                     var_name = f"input_text_{len(variables) + 1}"
@@ -841,6 +1051,31 @@ class ScriptGenerator:
                     )
                     step.action["path"] = f"${{{var_name}}}"
         return variables
+
+    @classmethod
+    def _is_sensitive_input_operation(cls, op: NormalizedOperation | None) -> bool:
+        if op is None or op.op_type != "type_text":
+            return False
+
+        data = op.data or {}
+        if bool(data.get("is_sensitive")):
+            return True
+
+        context = op.context or {}
+        focused_element = context.get("focused_element") or {}
+        haystack = " ".join(
+            str(value).casefold()
+            for value in (
+                focused_element.get("input_type"),
+                focused_element.get("title"),
+                focused_element.get("description"),
+                focused_element.get("functional_label"),
+                focused_element.get("identifier"),
+                focused_element.get("class_name"),
+            )
+            if value
+        )
+        return any(hint in haystack for hint in SENSITIVE_INPUT_HINTS)
 
     def generate_from_bt(self, bt_model: BehaviorTreeModel) -> AutomationFlow:
         steps = []

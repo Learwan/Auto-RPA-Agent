@@ -247,14 +247,19 @@ def _run_macos_hud() -> None:
                 self.mode_hint.setFrame_(NSMakeRect(20, 14, content_width, 14))
 
         def _stdin_loop(self):
-            for line in sys.stdin:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    self._command_queue.put(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+            try:
+                for line in sys.stdin:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        self._command_queue.put(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            finally:
+                # When the parent process exits, stdin is closed first. Queue a
+                # local close command so the detached HUD does not linger.
+                self._command_queue.put({"type": "close"})
 
         def pollCommands_(self, _timer):
             while True:

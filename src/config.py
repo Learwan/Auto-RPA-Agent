@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
@@ -148,6 +149,10 @@ class Settings(BaseSettings):
         default="models/qwen3.5-4b-4bit",
         validation_alias=AliasChoices("AUTO_AGENT_LOCAL_LLM_MODEL", "LOCAL_LLM_MODEL"),
     )
+    LOCAL_VISION_MODEL: str = Field(
+        default="models/openbmb_MiniCPM-V-4.6",
+        validation_alias=AliasChoices("AUTO_AGENT_LOCAL_VISION_MODEL", "LOCAL_VISION_MODEL"),
+    )
     LOCAL_LLM_BASE_URL: str = Field(
         default="http://localhost:8000/v1",
         validation_alias=AliasChoices("AUTO_AGENT_LOCAL_LLM_BASE_URL", "LOCAL_LLM_BASE_URL"),
@@ -263,6 +268,15 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     return Settings()
+
+
+def resolve_local_vision_model(settings_obj: Any) -> str:
+    vision_model = getattr(settings_obj, "LOCAL_VISION_MODEL", None)
+    if isinstance(vision_model, str) and vision_model.strip():
+        return vision_model
+
+    text_model = getattr(settings_obj, "LOCAL_LLM_MODEL", "")
+    return text_model if isinstance(text_model, str) else ""
 
 
 class SettingsProxy:

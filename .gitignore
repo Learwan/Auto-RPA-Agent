@@ -45,6 +45,7 @@ coverage.xml
 # committed. Anchor the rule at the repo root with a leading slash.
 /models/
 .artifacts/
+.pip-cache/
 auto-agent-workflow/
 
 # IDE

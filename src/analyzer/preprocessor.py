@@ -15,6 +15,10 @@ CLICK_TIME_THRESHOLD_MS = 100
 KEY_INPUT_MERGE_GAP_MS = 2000
 SCROLL_MERGE_GAP_MS = 500
 SAME_CLICK_DEBOUNCE_MS = 300
+NEIGHBOR_ANCHOR_MAX_GAP_STEPS = 2
+NEIGHBOR_ANCHOR_MAX_GAP_MS = 4000
+NEIGHBOR_ANCHOR_TOLERANCE_PX = 80
+SCROLL_ANCHOR_TOLERANCE_PX = 180
 
 
 class NormalizedOperation:
@@ -157,6 +161,7 @@ class OperationPreprocessor:
                 action=da.action,
                 text=merged_text,
                 modifiers=[],
+                is_sensitive=da.is_sensitive or db.is_sensitive,
             )
             return OperationEvent(
                 id=a.id,
@@ -200,6 +205,8 @@ class OperationPreprocessor:
         last_process_name: str | None = None
         last_process_pid: int | None = None
         last_platform: str | None = None
+        last_anchor_by_window: dict[tuple, dict] = {}
+        last_scroll_anchor_by_window: dict[tuple, dict] = {}
 
         for op in operations:
             context = dict(op.context or {})
@@ -227,6 +234,31 @@ class OperationPreprocessor:
             if not context.get("platform") and last_platform:
                 context["platform"] = last_platform
 
+            window_key = self._window_context_key(context)
+            focused_element = self._compact_anchor_element(context.get("focused_element"))
+
+            if focused_element and self._is_meaningful_anchor_element(focused_element):
+                anchor_state = {
+                    "element": focused_element,
+                    "seq_num": op.seq_num,
+                    "timestamp": op.timestamp,
+                }
+                if window_key:
+                    last_anchor_by_window[window_key] = anchor_state
+                    if self._is_scrollable_anchor_element(focused_element):
+                        last_scroll_anchor_by_window[window_key] = anchor_state
+            elif window_key:
+                if op.op_type == "mouse_scroll":
+                    scroll_anchor = self._select_scroll_anchor(last_scroll_anchor_by_window.get(window_key), op)
+                    if scroll_anchor:
+                        context["scroll_anchor"] = dict(scroll_anchor["element"])
+                        context["scroll_anchor_inferred"] = True
+                elif op.op_type in {"mouse_click", "mouse_double_click", "mouse_right_click"}:
+                    neighbor_anchor = self._select_neighbor_anchor(last_anchor_by_window.get(window_key), op)
+                    if neighbor_anchor:
+                        context["neighbor_anchor"] = dict(neighbor_anchor["element"])
+                        context["neighbor_anchor_inferred"] = True
+
             op.context = context
 
             if context.get("platform"):
@@ -239,6 +271,129 @@ class OperationPreprocessor:
                 last_process_pid = context["process_pid"]
 
         return operations
+
+    @staticmethod
+    def _window_context_key(context: dict) -> tuple | None:
+        active_window = context.get("active_window") or {}
+        parts = (
+            active_window.get("title") or "",
+            active_window.get("app_name") or "",
+            active_window.get("url") or "",
+        )
+        return parts if any(parts) else None
+
+    @staticmethod
+    def _compact_anchor_element(element: dict | None) -> dict | None:
+        if not isinstance(element, dict):
+            return None
+        compact = {
+            key: element.get(key)
+            for key in (
+                "role",
+                "title",
+                "identifier",
+                "value",
+                "description",
+                "functional_label",
+                "class_name",
+                "selector",
+                "xpath",
+                "url",
+                "frame",
+                "tag_name",
+                "input_type",
+                "bounds",
+            )
+            if element.get(key) not in (None, "", {}, [])
+        }
+        return compact or None
+
+    @staticmethod
+    def _is_meaningful_anchor_element(element: dict | None) -> bool:
+        if not isinstance(element, dict):
+            return False
+        return any(
+            element.get(key) not in (None, "", {}, [])
+            for key in (
+                "identifier",
+                "selector",
+                "xpath",
+                "title",
+                "value",
+                "description",
+                "functional_label",
+                "role",
+                "class_name",
+                "bounds",
+            )
+        )
+
+    @staticmethod
+    def _is_scrollable_anchor_element(element: dict | None) -> bool:
+        if not isinstance(element, dict):
+            return False
+        haystack = " ".join(
+            str(value).casefold()
+            for value in (
+                element.get("role"),
+                element.get("title"),
+                element.get("description"),
+                element.get("functional_label"),
+                element.get("class_name"),
+            )
+            if value
+        )
+        return any(token in haystack for token in ("scroll", "滚动", "list", "table", "tree", "outline"))
+
+    @staticmethod
+    def _operation_position(op: NormalizedOperation) -> tuple[int, int] | None:
+        x = op.data.get("x")
+        y = op.data.get("y")
+        if isinstance(x, int) and isinstance(y, int):
+            return x, y
+        return None
+
+    @classmethod
+    def _position_near_bounds(cls, op: NormalizedOperation, bounds: dict | None, tolerance: int) -> bool:
+        if not isinstance(bounds, dict):
+            return False
+        position = cls._operation_position(op)
+        if position is None:
+            return False
+        x, y = position
+        bx = bounds.get("x")
+        by = bounds.get("y")
+        bw = bounds.get("width")
+        bh = bounds.get("height")
+        if not all(isinstance(value, int) for value in (bx, by, bw, bh)):
+            return False
+        return (
+            bx - tolerance <= x <= bx + bw + tolerance
+            and by - tolerance <= y <= by + bh + tolerance
+        )
+
+    @classmethod
+    def _select_neighbor_anchor(cls, anchor_state: dict | None, op: NormalizedOperation) -> dict | None:
+        if not anchor_state:
+            return None
+        if (op.seq_num - anchor_state.get("seq_num", -999)) > NEIGHBOR_ANCHOR_MAX_GAP_STEPS:
+            return None
+        if (op.timestamp - anchor_state.get("timestamp", 0)) > NEIGHBOR_ANCHOR_MAX_GAP_MS:
+            return None
+        element = anchor_state.get("element") or {}
+        if not cls._position_near_bounds(op, element.get("bounds"), NEIGHBOR_ANCHOR_TOLERANCE_PX):
+            return None
+        return anchor_state
+
+    @classmethod
+    def _select_scroll_anchor(cls, anchor_state: dict | None, op: NormalizedOperation) -> dict | None:
+        if not anchor_state:
+            return None
+        element = anchor_state.get("element") or {}
+        bounds = element.get("bounds")
+        if bounds and not cls._position_near_bounds(op, bounds, SCROLL_ANCHOR_TOLERANCE_PX):
+            return None
+        return anchor_state
 
     @staticmethod
     def _resolve_active_window(context: dict, op: NormalizedOperation) -> dict | None:
@@ -321,7 +476,7 @@ class OperationPreprocessor:
             text = data.text or data.key
             return NormalizedOperation(
                 op_type="type_text",
-                data={"text": text},
+                data={"text": text, "is_sensitive": data.is_sensitive},
                 timestamp=op.timestamp,
                 seq_num=idx,
                 context=context,

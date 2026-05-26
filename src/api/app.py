@@ -25,7 +25,7 @@ from src.api.routes import (
     vision,
 )
 from src.api.routes import settings as settings_routes
-from src.config import settings
+from src.config import resolve_local_vision_model, settings
 from src.db.database import close_db, init_db
 from src.llm.gui_grounding import GUIGroundingEngine
 from src.llm.local_engine import LocalLLMEngine
@@ -192,8 +192,11 @@ def create_app() -> FastAPI:
             "local_llm_enabled": settings.LOCAL_LLM_ENABLED,
             "local_llm_engine": settings.LOCAL_LLM_ENGINE if settings.LOCAL_LLM_ENABLED else None,
             "local_llm_model": settings.LOCAL_LLM_MODEL if settings.LOCAL_LLM_ENABLED else None,
+            "local_vision_model": resolve_local_vision_model(settings)
+            if settings.LOCAL_LLM_ENABLED and settings.VISION_ENABLED
+            else None,
             "vision_enabled": settings.VISION_ENABLED,
-            "vision_model": settings.LOCAL_LLM_MODEL
+            "vision_model": resolve_local_vision_model(settings)
             if settings.VISION_ENABLED and settings.LOCAL_LLM_ENABLED
             else None,
             "grounding_engine": getattr(settings, "GROUNDING_ENGINE", "qwen"),
@@ -259,7 +262,7 @@ def create_app() -> FastAPI:
                         "本地 LLM",
                         enabled=settings.LOCAL_LLM_ENABLED,
                         detail=(
-                            f"引擎：{settings.LOCAL_LLM_ENGINE}；模型：{settings.LOCAL_LLM_MODEL}。"
+                            f"引擎：{settings.LOCAL_LLM_ENGINE}；文本模型：{settings.LOCAL_LLM_MODEL}。"
                             if settings.LOCAL_LLM_ENABLED
                             else "当前服务未启用本地 LLM。"
                         ),
@@ -275,7 +278,7 @@ def create_app() -> FastAPI:
                         "本地视觉分析",
                         enabled=settings.VISION_ENABLED,
                         detail=(
-                            f"视觉已启用；当前模型路径：{settings.LOCAL_LLM_MODEL}；请求引擎：{settings.LOCAL_LLM_ENGINE}。{runtime_suffix}"
+                            f"视觉已启用；当前视觉模型路径：{resolve_local_vision_model(settings)}；请求引擎：{settings.LOCAL_LLM_ENGINE}。{runtime_suffix}"
                             if settings.VISION_ENABLED
                             else "当前服务已将视觉分析关闭。"
                         ),
@@ -430,6 +433,7 @@ def create_app() -> FastAPI:
                 },
                 "vision": {
                     "enabled": settings.VISION_ENABLED,
+                    "model": resolve_local_vision_model(settings),
                     "dependency_ok": local_vlm_dependency_ok,
                     "runtime_loaded": runtime["vision_loaded"],
                     "backend": runtime_backend,

@@ -82,6 +82,33 @@ def _safe_str(value) -> str | None:
     return text or None
 
 
+def _normalized_text(value: str | None) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _score_text(actual: str | None, expected: str | None, *, exact: int, contains: int) -> int:
+    expected_text = _normalized_text(expected)
+    actual_text = _normalized_text(actual)
+    if not expected_text or not actual_text:
+        return 0
+    if actual_text == expected_text:
+        return exact
+    if expected_text in actual_text:
+        return contains
+    return 0
+
+
+def _bounds_match(actual: Rect | None, expected: Rect | None, tolerance: int) -> bool:
+    if actual is None or expected is None:
+        return False
+    return (
+        abs(actual.x - expected.x) <= tolerance
+        and abs(actual.y - expected.y) <= tolerance
+        and abs(actual.width - expected.width) <= max(4, tolerance)
+        and abs(actual.height - expected.height) <= max(4, tolerance)
+    )
+
+
 def _count_children(automation, element) -> int:
     try:
         walker = automation.ControlViewWalker
@@ -148,6 +175,16 @@ def _matches_criteria(info: UIElement, criteria: ElementCriteria) -> int:
         score += 2
 
     if criteria.class_name and info.class_name == criteria.class_name:
+        score += 2
+
+    score += _score_text(info.value, criteria.value, exact=4, contains=2)
+    score += _score_text(info.description, criteria.description, exact=3, contains=2)
+    score += _score_text(getattr(info, "label", None), criteria.label, exact=3, contains=2)
+    score += _score_text(getattr(info, "functional_label", None), criteria.functional_label, exact=3, contains=2)
+    score += _score_text(getattr(info, "input_type", None), criteria.input_type, exact=2, contains=1)
+    score += _score_text(getattr(info, "tag_name", None), criteria.tag_name, exact=2, contains=1)
+
+    if criteria.bounds and _bounds_match(info.bounds, criteria.bounds, criteria.position_tolerance):
         score += 2
 
     if criteria.position and info.bounds:

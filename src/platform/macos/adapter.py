@@ -89,6 +89,22 @@ class MacOSAdapter(BasePlatformAdapter):
             criteria_dict["class_name"] = criteria.class_name
         if criteria.text_contains:
             criteria_dict["text_contains"] = criteria.text_contains
+        if criteria.value:
+            criteria_dict["value"] = criteria.value
+        if criteria.label:
+            criteria_dict["label"] = criteria.label
+        if criteria.description:
+            criteria_dict["description"] = criteria.description
+        if criteria.functional_label:
+            criteria_dict["functional_label"] = criteria.functional_label
+        if criteria.input_type:
+            criteria_dict["input_type"] = criteria.input_type
+        if criteria.tag_name:
+            criteria_dict["tag_name"] = criteria.tag_name
+        if criteria.position:
+            criteria_dict["position"] = criteria.position.model_dump()
+        if criteria.bounds:
+            criteria_dict["bounds"] = criteria.bounds.model_dump()
         return await find_element_by_criteria(criteria_dict)
 
     def check_permissions(self) -> dict[str, bool]:

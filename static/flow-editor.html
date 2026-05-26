@@ -1870,6 +1870,12 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
   const latestLocator = runtimeAi?.latestLocator;
   const latestTiming = runtimeAi?.latestTiming;
   const summary = runtimeAi?.aiSummary;
+  const summaryWarnings = Array.isArray(summary?.warnings) ? summary.warnings.filter(Boolean) : [];
+  const summaryOptimizationItems = Array.isArray(summary?.optimization_items) ? summary.optimization_items.filter(Boolean) : [];
+  const summaryFragileSteps = Array.isArray(summary?.fragile_steps) ? summary.fragile_steps.filter(Boolean) : [];
+  const summaryProviderLabel = summary
+    ? (summary.local_ai_used ? 'Local AI' : (summary.provider === 'rules' ? 'Rules' : (summary.provider || 'Rules')))
+    : null;
   const titleText =
     status === 'running' ? '⚡ 执行中'
     : status === 'completed' ? '✅ 执行完成'
@@ -2053,7 +2059,7 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
               <div>{latestAssist.summary || 'AI 正在协助调整执行。'}</div>
             </div>
           )}
-          {summary && (summary.warnings?.length || summary.optimization_items?.length) ? (
+          {summary && (summary.overview || summaryWarnings.length || summaryOptimizationItems.length || summaryFragileSteps.length) ? (
             <div style={{
               fontSize: '11px',
               padding: '6px 8px',
@@ -2061,14 +2067,33 @@ function ExecutionStatus({ status, currentStep, totalSteps, currentStepId, stepL
               background: 'rgba(15,23,42,0.04)',
               border: '1px solid var(--border)',
             }}>
-              <div style={{ fontWeight: '600', marginBottom: '4px' }}>流程优化结果</div>
-              {summary.warnings?.length > 0 && (
-                <div style={{ color: 'var(--accent-amber)', marginBottom: summary.optimization_items?.length ? '4px' : 0 }}>
-                  {summary.warnings.slice(0, 2).join('；')}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ fontWeight: '600' }}>流程优化结果</div>
+                {summaryProviderLabel && (
+                  <span style={{ color: summary?.local_ai_used ? 'var(--accent-cyan)' : 'var(--text-dim)', fontSize: '10px', fontWeight: '600' }}>
+                    {summaryProviderLabel}
+                  </span>
+                )}
+              </div>
+              {summary?.overview && (
+                <div style={{ color: 'var(--text-body)', marginBottom: (summaryWarnings.length || summaryOptimizationItems.length || summaryFragileSteps.length) ? '4px' : 0 }}>
+                  执行概览：{summary.overview}
                 </div>
               )}
-              {summary.optimization_items?.length > 0 && (
-                <div style={{ color: 'var(--text-body)' }}>{summary.optimization_items.slice(0, 2).join('；')}</div>
+              {summaryWarnings.length > 0 && (
+                <div style={{ color: 'var(--accent-amber)', marginBottom: (summaryOptimizationItems.length || summaryFragileSteps.length) ? '4px' : 0 }}>
+                  {summaryWarnings.slice(0, 2).join('；')}
+                </div>
+              )}
+              {summaryOptimizationItems.length > 0 && (
+                <div style={{ color: 'var(--text-body)', marginBottom: summaryFragileSteps.length ? '4px' : 0 }}>
+                  {summaryOptimizationItems.slice(0, 2).join('；')}
+                </div>
+              )}
+              {summaryFragileSteps.length > 0 && (
+                <div style={{ color: 'var(--accent-red)' }}>
+                  脆弱节点：{summaryFragileSteps.slice(0, 2).map(item => `#${item.step_index || '-'} ${item.step_id || ''} ${item.reason || ''}`.trim()).join('；')}
+                </div>
               )}
             </div>
           ) : null}
@@ -2156,6 +2181,13 @@ function DebugPanel({ stepLogs, execStatus, runtimeAi, variables, onBreakpointTo
     Array.isArray(runtimeAi?.latestLocator?.attempted_providers) && runtimeAi.latestLocator.attempted_providers.length > 0 ? `尝试: ${runtimeAi.latestLocator.attempted_providers.join(' → ')}` : null,
     Array.isArray(runtimeAi?.latestLocator?.fallback_chain) && runtimeAi.latestLocator.fallback_chain.length > 0 ? `Fallback: ${runtimeAi.latestLocator.fallback_chain.join(' → ')}` : null,
   ].filter(Boolean);
+  const summary = runtimeAi?.aiSummary;
+  const summaryProviderLabel = summary
+    ? (summary.local_ai_used ? 'Local AI' : (summary.provider === 'rules' ? 'Rules' : (summary.provider || 'Rules')))
+    : null;
+  const summaryWarnings = Array.isArray(summary?.warnings) ? summary.warnings.filter(Boolean) : [];
+  const summaryOptimizationItems = Array.isArray(summary?.optimization_items) ? summary.optimization_items.filter(Boolean) : [];
+  const summaryFragileSteps = Array.isArray(summary?.fragile_steps) ? summary.fragile_steps.filter(Boolean) : [];
 
   return React.createElement('div', { className: 'debug-panel', style: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '220px', background: 'var(--bg-deep)', borderTop: '2px solid var(--border)', display: 'flex', flexDirection: 'column', zIndex: 50 } },
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' } },
@@ -2217,7 +2249,15 @@ function DebugPanel({ stepLogs, execStatus, runtimeAi, variables, onBreakpointTo
         ),
         React.createElement('div', { style: { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg-panel)' } },
           React.createElement('div', { style: { fontWeight: 600, marginBottom: '4px' } }, '流程优化'),
-          React.createElement('div', { style: { color: 'var(--text-body)', whiteSpace: 'pre-wrap' } }, runtimeAi?.aiSummary?.optimization_items?.join('\n') || runtimeAi?.aiSummary?.warnings?.join('\n') || '执行完成后显示')
+          summary
+            ? React.createElement(React.Fragment, null,
+                summaryProviderLabel && React.createElement('div', { style: { color: 'var(--accent-cyan)', marginBottom: '4px', whiteSpace: 'pre-wrap' } }, `流程优化来源: ${summaryProviderLabel}`),
+                summary?.overview && React.createElement('div', { style: { color: 'var(--text-body)', marginBottom: '4px', whiteSpace: 'pre-wrap' } }, `执行概览: ${summary.overview}`),
+                summaryWarnings.length > 0 && React.createElement('div', { style: { color: 'var(--accent-amber)', marginBottom: '4px', whiteSpace: 'pre-wrap' } }, summaryWarnings.join('\n')),
+                summaryOptimizationItems.length > 0 && React.createElement('div', { style: { color: 'var(--text-body)', marginBottom: summaryFragileSteps.length > 0 ? '4px' : 0, whiteSpace: 'pre-wrap' } }, summaryOptimizationItems.join('\n')),
+                summaryFragileSteps.length > 0 && React.createElement('div', { style: { color: 'var(--accent-red)', whiteSpace: 'pre-wrap' } }, `脆弱节点:\n${summaryFragileSteps.map(item => `#${item.step_index || '-'} ${item.step_id || ''} ${item.reason || ''}`.trim()).join('\n')}`)
+              )
+            : React.createElement('div', { style: { color: 'var(--text-dim)', whiteSpace: 'pre-wrap' } }, '执行完成后显示')
         )
       ),
       activeTab === 'vars' && (Object.keys(variables || {}).length > 0

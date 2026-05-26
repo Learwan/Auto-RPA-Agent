@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from src.config import settings
 from src.llm.service import LLMService
 from src.models.hotkey import HotkeyBinding
 from src.models.desktop import UIElement, WindowInfo
@@ -29,6 +30,9 @@ from src.models.operation import (
 from src.settings_store import SettingsStore
 
 logger = logging.getLogger(__name__)
+
+HUD_LOCAL_AI_TIMEOUT_S = 4.0
+HUD_REMOTE_AI_TIMEOUT_S = 8.0
 
 _SENSITIVE_ELEMENT_KEYWORDS = {
     "password",
@@ -374,8 +378,10 @@ class RecordingHUDManager:
         )
 
     def _ensure_process(self) -> None:
-        if self._process is not None and self._process.poll() is None:
-            return
+        if self._process is not None:
+            if self._process.poll() is None:
+                return
+            self._terminate_process()
 
         root_dir = Path(__file__).resolve().parents[2]
         env = os.environ.copy()
@@ -399,11 +405,34 @@ class RecordingHUDManager:
         process = self._process
         if process is None:
             return
-        if process.poll() is None:
-            with contextlib.suppress(Exception):
-                process.terminate()
-                process.wait(timeout=1.5)
-        self._process = None
+
+        try:
+            if process.stdin is not None:
+                with contextlib.suppress(Exception):
+                    process.stdin.close()
+
+            if process.poll() is None:
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=0.25)
+
+            if process.poll() is None:
+                with contextlib.suppress(Exception):
+                    process.terminate()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=1.5)
+
+            if process.poll() is None:
+                with contextlib.suppress(Exception):
+                    process.kill()
+                with contextlib.suppress(Exception):
+                    process.wait(timeout=1.0)
+            else:
+                with contextlib.suppress(Exception):
+                    process.wait(timeout=0.1)
+        finally:
+            self._process = None
+            self._stdout_thread = None
+            self._stderr_thread = None
 
     def _push_state(self) -> None:
         if self._active_session_id is None:
@@ -560,6 +589,40 @@ class RecordingHUDManager:
 
         return "\n".join(lines)
 
+    async def _chat_with_local_llm(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        from src.llm.local_engine import LocalLLMEngine
+
+        engine = await LocalLLMEngine.get_instance()
+        result = await engine.generate(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return str(result.text).strip()
+
+    async def _chat_with_remote_llm(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float,
+        top_p: float,
+        max_tokens: int,
+    ) -> str:
+        response = await self._llm.chat(
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            stream=False,
+        )
+        return str(response).strip()
+
     async def _handle_prompt(self, prompt: str) -> None:
         context_text = build_recording_prompt_context(
             session_name=self._session_name or "未命名会话",
@@ -570,42 +633,102 @@ class RecordingHUDManager:
             latest_focused=self._latest_focused,
         )
 
-        if not self._llm.is_configured:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是桌面录制引导助手。用户正在录制自动化流程。"
+                    "请只依据给定录制上下文给出简短、可执行的下一步指导，优先提醒窗口、元素、变量输入、检查点和分支风险。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"录制上下文:\n{context_text}\n\n用户问题: {prompt}",
+            },
+        ]
+
+        local_enabled = settings.LOCAL_LLM_ENABLED
+        remote_enabled = self._llm.is_configured
+
+        if not local_enabled and not remote_enabled:
             self._send_command(
                 {
                     "type": "append_message",
                     "role": "assistant",
-                    "content": "LLM 尚未配置，当前只能显示录制上下文，无法提供实时引导。",
+                    "content": "远端文本 LLM 未配置，本地 LLM 也未启用，当前只能显示录制上下文，无法提供实时引导。",
                 }
             )
             return
 
         self._send_command({"type": "thinking", "visible": True})
+        local_error: Exception | None = None
+        remote_error: Exception | None = None
         try:
-            response = await self._llm.chat(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是桌面录制引导助手。用户正在录制自动化流程。"
-                            "请只依据给定录制上下文给出简短、可执行的下一步指导，优先提醒窗口、元素、变量输入、检查点和分支风险。"
+            response = ""
+            if local_enabled:
+                try:
+                    response = await asyncio.wait_for(
+                        self._chat_with_local_llm(
+                            messages,
+                            temperature=0.3,
+                            max_tokens=800,
                         ),
-                    },
+                        timeout=HUD_LOCAL_AI_TIMEOUT_S,
+                    )
+                except TimeoutError:
+                    local_error = TimeoutError(f"本地 LLM 响应超时（{HUD_LOCAL_AI_TIMEOUT_S:.1f}s）")
+                    logger.info("HUD local prompt timed out after %.1fs", HUD_LOCAL_AI_TIMEOUT_S)
+                except Exception as exc:
+                    local_error = exc
+                    logger.warning("HUD local prompt failed, falling back to remote LLM: %s", exc, exc_info=True)
+
+            if not response and remote_enabled:
+                try:
+                    response = await asyncio.wait_for(
+                        self._chat_with_remote_llm(
+                            messages,
+                            temperature=0.3,
+                            top_p=0.9,
+                            max_tokens=800,
+                        ),
+                        timeout=HUD_REMOTE_AI_TIMEOUT_S,
+                    )
+                except TimeoutError:
+                    remote_error = TimeoutError(f"远端文本 LLM 响应超时（{HUD_REMOTE_AI_TIMEOUT_S:.1f}s）")
+                    logger.info("HUD remote prompt timed out after %.1fs", HUD_REMOTE_AI_TIMEOUT_S)
+                except Exception as exc:
+                    remote_error = exc
+                    logger.warning("HUD remote prompt failed: %s", exc, exc_info=True)
+
+            if not response:
+                detail_parts: list[str] = []
+                if local_error is not None:
+                    detail_parts.append(
+                        f"本地 LLM 当前不可用（{_truncate_text(str(local_error), limit=120)}）"
+                    )
+                if remote_enabled:
+                    if remote_error is not None:
+                        detail_parts.append(
+                            f"远端文本 LLM 当前不可用（{_truncate_text(str(remote_error), limit=120)}）"
+                        )
+                else:
+                    detail_parts.append("远端文本 LLM 未配置")
+
+                detail = "；".join(detail_parts)
+                self._send_command(
                     {
-                        "role": "user",
-                        "content": f"录制上下文:\n{context_text}\n\n用户问题: {prompt}",
-                    },
-                ],
-                temperature=0.3,
-                top_p=0.9,
-                max_tokens=800,
-                stream=False,
-            )
+                        "type": "append_message",
+                        "role": "assistant",
+                        "content": f"{detail}，当前只能显示录制上下文，无法提供实时引导。",
+                    }
+                )
+                return
+
             self._send_command(
                 {
                     "type": "append_message",
                     "role": "assistant",
-                    "content": str(response).strip(),
+                    "content": response,
                 }
             )
         except Exception as exc:

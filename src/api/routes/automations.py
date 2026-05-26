@@ -491,6 +491,7 @@ async def execute_flow_live_ws(websocket: WebSocket, flow_id: str, dry_run: bool
                     "completed_steps": record.completed_steps,
                     "failed_steps": record.failed_steps,
                     "error_summary": record.error_summary,
+                    "ai_summary": record.ai_summary.model_dump() if record.ai_summary else None,
                 }
             )
         else:

@@ -60,6 +60,76 @@ def _derive_functional_label(
     return None
 
 
+def _normalize_text(value: str | None) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _score_text(actual: str | None, expected: str | None, *, exact: int, contains: int) -> int:
+    expected_text = _normalize_text(expected)
+    actual_text = _normalize_text(actual)
+    if not expected_text or not actual_text:
+        return 0
+    if actual_text == expected_text:
+        return exact
+    if expected_text in actual_text:
+        return contains
+    return 0
+
+
+def _bounds_match(info_bounds: Rect | None, target_bounds: dict | None, tolerance: int = 20) -> bool:
+    if info_bounds is None or not isinstance(target_bounds, dict):
+        return False
+    target_x = target_bounds.get("x")
+    target_y = target_bounds.get("y")
+    target_width = target_bounds.get("width")
+    target_height = target_bounds.get("height")
+    if not all(isinstance(value, int) for value in (target_x, target_y, target_width, target_height)):
+        return False
+    return (
+        abs(info_bounds.x - target_x) <= tolerance
+        and abs(info_bounds.y - target_y) <= tolerance
+        and abs(info_bounds.width - target_width) <= max(4, tolerance)
+        and abs(info_bounds.height - target_height) <= max(4, tolerance)
+    )
+
+
+def _matches_criteria(info: UIElement, criteria: dict) -> int:
+    score = 0
+    if not isinstance(criteria, dict):
+        return score
+
+    if criteria.get("role") and info.role and criteria["role"] == info.role:
+        score += 2
+
+    score += _score_text(info.title, criteria.get("title"), exact=3, contains=2)
+    score += _score_text(info.identifier, criteria.get("accessibility_id"), exact=4, contains=2)
+    score += _score_text(info.title, criteria.get("text_contains"), exact=2, contains=2)
+    score += _score_text(info.class_name, criteria.get("class_name"), exact=2, contains=1)
+    score += _score_text(info.value, criteria.get("value"), exact=3, contains=2)
+    score += _score_text(info.description, criteria.get("description"), exact=3, contains=2)
+    score += _score_text(info.label, criteria.get("label"), exact=2, contains=1)
+    score += _score_text(info.functional_label, criteria.get("functional_label"), exact=3, contains=2)
+    score += _score_text(info.input_type, criteria.get("input_type"), exact=2, contains=1)
+    score += _score_text(info.tag_name, criteria.get("tag_name"), exact=2, contains=1)
+
+    position = criteria.get("position")
+    if isinstance(position, dict) and info.bounds:
+        x = position.get("x")
+        y = position.get("y")
+        if isinstance(x, int) and isinstance(y, int):
+            tolerance = 20
+            if (
+                info.bounds.x - tolerance <= x <= info.bounds.x + info.bounds.width + tolerance
+                and info.bounds.y - tolerance <= y <= info.bounds.y + info.bounds.height + tolerance
+            ):
+                score += 2
+
+    if _bounds_match(info.bounds, criteria.get("bounds")):
+        score += 2
+
+    return score
+
+
 def _extract_element_info(element) -> UIElement | None:
     try:
         from ApplicationServices import (
@@ -263,30 +333,17 @@ async def find_element_by_criteria(criteria: dict) -> UIElement | None:
         if err != kAXErrorSuccess:
             return None
 
-        target_role = criteria.get("role")
-        target_title = criteria.get("title")
-        target_identifier = criteria.get("accessibility_id")
-        target_text_contains = criteria.get("text_contains")
-
         best_match = None
         best_score = 0
 
         def _search(element, depth=0):
             nonlocal best_match, best_score
-            if depth > 8 or best_score >= 3:
+            if depth > 8 or best_score >= 6:
                 return
 
             info = _extract_element_info(element)
             if info:
-                score = 0
-                if target_role and info.role and target_role == info.role:
-                    score += 1
-                if target_title and info.title and target_title.lower() == info.title.lower():
-                    score += 1
-                if target_identifier and info.identifier and target_identifier == info.identifier:
-                    score += 1
-                if target_text_contains and info.title and target_text_contains.lower() in info.title.lower():
-                    score += 1
+                score = _matches_criteria(info, criteria)
                 if score > best_score:
                     best_score = score
                     best_match = info

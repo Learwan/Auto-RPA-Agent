@@ -268,6 +268,8 @@ class StepExecutor:
             if self._safety.is_paused():
                 raise RuntimeError(f"安全控制：连续 {CONSECUTIVE_FAILURE_LIMIT} 次失败，执行已暂停，等待用户确认")
 
+            self._ensure_credential_binding(step, resolved_action)
+
             if (
                 step.type not in (StepType.WAIT, StepType.CONDITION, StepType.LOOP)
                 and step.locator_requires_confirmation()
@@ -354,7 +356,7 @@ class StepExecutor:
                     raise RuntimeError(f"Condition not met for step {step.id}")
             else:
                 handler = self._get_handler(step.type)
-                if step.type in (StepType.CLICK, StepType.TYPE):
+                if step.type in (StepType.CLICK, StepType.TYPE, StepType.SCROLL):
                     handler_located = await handler(step, resolved_action, located_element)
                 elif step.type == StepType.SWITCH_WINDOW:
                     handler_located = await handler(step, resolved_action, matched_window)
@@ -439,6 +441,7 @@ class StepExecutor:
 
         try:
             resolved_action = self._resolve_variables(step.action, variables)
+            self._ensure_credential_binding(step, resolved_action)
             await self._ensure_preconditions(step, resolved_action, variables)
 
             if step.type == StepType.CONDITION:
@@ -600,6 +603,12 @@ class StepExecutor:
         if not text:
             return None
 
+        if (step.metadata or {}).get("credential_binding_required") and isinstance(text, str):
+            if text.startswith("${") and text.endswith("}"):
+                raise RuntimeError(
+                    "拒绝执行：敏感输入尚未绑定可信凭证，请先为该步骤配置 credential 变量。"
+                )
+
         if not self._safety.check_random_keyboard_pattern(text):
             raise RuntimeError("安全控制：检测到随机键盘输入模式，操作已中止")
 
@@ -635,6 +644,19 @@ class StepExecutor:
                     pyautogui.press(char)
         return located
 
+    @staticmethod
+    def _ensure_credential_binding(step: AutomationStep, action: dict) -> None:
+        if step.type != StepType.TYPE:
+            return
+        if not (step.metadata or {}).get("credential_binding_required"):
+            return
+
+        text = action.get("text")
+        if isinstance(text, str) and text.startswith("${") and text.endswith("}"):
+            raise RuntimeError(
+                "拒绝执行：敏感输入尚未绑定可信凭证，请先为该步骤配置 credential 变量。"
+            )
+
     async def _execute_hotkey(self, step: AutomationStep, action: dict) -> None:
         press_hotkey = getattr(self._adapter, "press_hotkey", None)
         if self._adapter.get_platform_name() == "web" and callable(press_hotkey):
@@ -647,11 +669,16 @@ class StepExecutor:
         if keys:
             pyautogui.hotkey(*keys)
 
-    async def _execute_scroll(self, step: AutomationStep, action: dict) -> None:
+    async def _execute_scroll(
+        self,
+        step: AutomationStep,
+        action: dict,
+        located: LocatedElement | None = None,
+    ) -> LocatedElement | None:
         scroll_target = getattr(self._adapter, "scroll_target", None)
         if (self._is_web_target(step.target) or self._adapter.get_platform_name() == "web") and callable(scroll_target):
             await scroll_target(step.target, action)
-            return
+            return located
 
         import pyautogui
 
@@ -659,10 +686,17 @@ class StepExecutor:
         x = action.get("x")
         y = action.get("y")
 
+        if step.target and step.target.strategy != LocateStrategy.POSITION:
+            if located is None or not located.center:
+                located = await self._locator.locate(step.target)
+            if located and located.center:
+                x, y = located.center.x, located.center.y
+
         if x is not None and y is not None:
             pyautogui.scroll(delta, x, y)
         else:
             pyautogui.scroll(delta)
+        return located
 
     async def _execute_drag(self, step: AutomationStep, action: dict) -> None:
         drag_target = getattr(self._adapter, "drag_target", None)

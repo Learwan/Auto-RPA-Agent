@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.config import settings
+from src.config import resolve_local_vision_model, settings
 from src.llm.gui_grounding import GUIGroundingEngine
 from src.llm.local_engine import LocalLLMEngine
 from src.llm.multimodal_service import (
@@ -84,7 +84,7 @@ async def vision_status():
     return {
         "enabled": settings.VISION_ENABLED,
         "configured": bool(settings.LOCAL_LLM_ENABLED),
-        "model": settings.LOCAL_LLM_MODEL if settings.LOCAL_LLM_ENABLED else None,
+        "model": resolve_local_vision_model(settings) if settings.LOCAL_LLM_ENABLED else None,
         "engine": settings.LOCAL_LLM_ENGINE if settings.LOCAL_LLM_ENABLED else None,
         "runtime_loaded": runtime["vision_loaded"],
         "runtime_backend": runtime["vision_backend"],

@@ -93,10 +93,15 @@ class StepTarget(BaseModel):
             return False
         text = self.text_contains or self.title or ""
         has_attrs = bool(self.expected_attributes)
+        has_structural_anchor = bool(
+            self.role and (self.class_name or self.bounds or has_attrs)
+        )
         if text and len(text) > 4 and has_attrs:
             return False
         if self.strategy == LocateStrategy.POSITION:
             return True
+        if self.strategy == LocateStrategy.TEXT_MATCH and has_structural_anchor:
+            return False
         if self.strategy == LocateStrategy.TEXT_MATCH and not has_attrs:
             return True
         return False
@@ -104,6 +109,8 @@ class StepTarget(BaseModel):
     def inferred_locator_stability(self) -> str:
         if self.selector or self.xpath or self.accessibility_id:
             return "high"
+        if self.role and (self.class_name or self.bounds or self.expected_attributes):
+            return "medium"
         if self.title or self.text_contains:
             return "medium"
         return "low"

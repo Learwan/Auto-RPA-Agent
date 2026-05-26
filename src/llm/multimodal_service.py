@@ -9,8 +9,8 @@ from io import BytesIO
 
 from PIL import Image
 
-from src.config import settings
-from src.llm.local_engine import LocalLLMEngine
+from src.config import resolve_local_vision_model, settings
+from src.llm.local_engine import LocalLLMEngine, LocalVisionRuntimeUnavailableError
 from src.llm.token_counter import TokenCounter
 from src.models.vision import ScreenshotAnalysis, ScreenshotDiff, UIElement, VisualStep
 from src.monitoring.metrics import MetricsCollector
@@ -207,7 +207,7 @@ class MultimodalLLMService:
     def _track_call(self, text_in: str, text_out: str, latency_ms: float, images_count: int, success: bool) -> None:
         tokens_in = TokenCounter.estimate_text_tokens(text_in)
         tokens_out = TokenCounter.estimate_text_tokens(text_out)
-        model = settings.LOCAL_LLM_MODEL
+        model = resolve_local_vision_model(settings)
         self._token_counter.record_call(model, tokens_in, tokens_out, images_count, latency_ms)
         self._metrics.track_llm_call(model, tokens_in, tokens_out, latency_ms, images_count, success)
 
@@ -239,6 +239,17 @@ class MultimodalLLMService:
                     attempt + 1,
                 )
                 break
+            except LocalVisionRuntimeUnavailableError as e:
+                latency_ms = (time.perf_counter() - t0) * 1000
+                last_error = e
+                self._track_call(prompt, "", latency_ms, 1, False)
+                logger.warning(
+                    "analyze_screenshot latency=%.0fms attempt=%d error=%s",
+                    latency_ms,
+                    attempt + 1,
+                    e,
+                )
+                raise VisionModelUnavailableError(str(e)) from e
             except Exception as e:
                 latency_ms = (time.perf_counter() - t0) * 1000
                 last_error = e
