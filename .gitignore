@@ -44,6 +44,7 @@ coverage.xml
 # broken the entire closed loop because none of those modules were ever
 # committed. Anchor the rule at the repo root with a leading slash.
 /models/
+.artifacts/
 auto-agent-workflow/
 
 # IDE
