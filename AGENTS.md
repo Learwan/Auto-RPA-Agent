@@ -18,7 +18,7 @@ Health check: `GET /api/health`. OpenAPI docs at `/docs`.
 
 ### Running tests
 ```bash
-uv run pytest -q                   # full suite (484 pass, 4 pre-existing failures)
+uv run pytest -q                   # full suite (548 pass, 8 pre-existing failures)
 uv run pytest tests/unit -q        # unit tests only (fastest)
 uv run pytest tests/simulation -q  # simulation tests
 ```
@@ -39,10 +39,12 @@ AUTO_AGENT_RECORD_ENABLE_CLIPBOARD=false
 AUTO_AGENT_RECORD_ENABLE_FILESYSTEM=false
 ```
 
-### Known pre-existing test failures
-- `tests/simulation/test_full_pipeline.py` (3 tests): `suggest_flow_name` not wired in `AnalysisService`
+### Known pre-existing test failures (8, all logic/test-data issues — not environment problems)
+- `tests/simulation/test_full_pipeline.py` (3 tests): `suggest_flow_name` wiring / knowledge-graph / multi-session expectations
+- `tests/simulation/test_llm_vision_closed_loop.py` (1 test): `test_full_pipeline_achieves_certified`
+- `tests/simulation/test_replay_fidelity_simulation.py` (2 tests): `test_multi_round_hybrid_full_replay[2]` and `[3]`
+- `tests/unit/test_analysis_service.py` (1 test): `test_enhance_with_ai_falls_back_to_legacy_llm_methods` (legacy LLM call-order assertion)
 - `tests/unit/test_recorder_configuration.py` (1 test): `/tmp/` prefix in `IGNORED_PREFIXES` conflicts with pytest temp dirs
-- `tests/simulation/test_api_simulation.py` (5 tests): `init_db()` not called in test fixture, so DB tables are missing
 
 ### Important caveats
 - The `src/models/` package was reconstructed from usage analysis because `.gitignore` had `models/` which excluded it. The gitignore was changed to `/models/` to only exclude top-level ML model binaries.
